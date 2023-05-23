@@ -4,6 +4,7 @@
 
 // Import our tools.
 const { readValidators, extractRewards, getLatestEpoch } = require('./lib/rewardExtractor.js');
+const { saveRewards } = require('./lib/rewardSave.js');
 const { chunkArray } = require('./lib/utils.js');
 
 // If set to true then additional output will be printed to the console.
@@ -37,11 +38,12 @@ const debug = process.env.DEBUG;
         // Add 100 to the epoch interval to account for the current epoch as an integer
         let nextCheck = parseInt(latestEpoch.data.epoch) + parseInt(epochInterval);
         console.log('Next rewards check Epoch: ' + nextCheck + '\n')
-        if (latestEpoch.data.epoch > nextCheck) {
+        if (latestEpoch.data.epoch >= nextCheck) {
             if(debug) {
                 console.log('Checking for new rewards');
             }
-            const rewards = extractRewards(validatorChunks, epoch.data.epoch);
+            const rewards = await extractRewards(validatorChunks, epoch.data.epoch);
+            saveRewards(rewards);
         }
     }, 60000);
     
