@@ -29,6 +29,10 @@ const debug = process.env.DEBUG;
     console.log("\n---------------------------\nLIBC Validator Monitor\n---------------------------\n");
     console.log('Checking every ' + epochInterval + ' epochs for new rewards.\n');
 
+    // First run.
+    const rewards = await extractRewards(validatorChunks, epoch.data.epoch);
+    saveRewards(rewards);
+
     // Every 1 minute check for new epoch.
     setInterval(async () => {
         console.log('Checking for new epoch...')
@@ -42,7 +46,7 @@ const debug = process.env.DEBUG;
             if(debug) {
                 console.log('Checking for new rewards');
             }
-            const rewards = await extractRewards(validatorChunks, epoch.data.epoch);
+            const rewards = await extractRewards(validatorChunks, latestEpoch.data.epoch);
             saveRewards(rewards);
         }
     }, 60000);
