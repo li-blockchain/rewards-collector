@@ -13,11 +13,14 @@ const debug = process.env.DEBUG;
 // Immediately invoked async function
 (async () => {
 
+    // Read validators and chunk them up. Beaconcha.in api allows 100 validators per request.
     const validators = readValidators();
-    const validatorChunks = chunkArray(validators, 100); // Beaconcha.in api allows 100 validators per request.
+    const validatorChunks = chunkArray(validators, 100); 
 
+    // Get our starting epoch. 
     const epoch = await getLatestEpoch();
 
+    // Our epoch interval is how often we check for new rewards. Beaconcha.in goes 100 epochs at a time.
     let epochInterval;
     if(process.env.EPOCH_INTERVAL) {
         epochInterval = process.env.EPOCH_INTERVAL;
