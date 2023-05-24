@@ -32,8 +32,9 @@ const debug = process.env.DEBUG;
     let nextEpoch = epoch;
     setInterval(async () => {
         const currentEpoch = await getLatestEpoch();
+        console.log('Current epoch: ' + currentEpoch.data.epoch);
         nextEpoch = parseInt(nextEpoch) + 100;
-        if(nextEpoch > currentEpoch) {
+        if(nextEpoch > currentEpoch.data.epoch) {
             console.log('Backfill Complete');
             process.exit();
         }
