@@ -7,6 +7,8 @@ const { readValidators, extractRewards, getLatestEpoch } = require('./lib/reward
 const { saveRewards } = require('./lib/rewardSave.js');
 const { chunkArray } = require('./lib/utils.js');
 
+require('dotenv').config();
+
 // If set to true then additional output will be printed to the console.
 const debug = process.env.DEBUG;
 

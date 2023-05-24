@@ -19,7 +19,7 @@ const debug = process.env.DEBUG;
     const validatorChunks = chunkArray(validators, 100); 
 
     // Get our starting epoch. 
-    const epoch = process.env.START_EPOCH;
+    const epoch = process.env.EPOCH_START;
 
     console.log("\n---------------------------\nLIBC Validator Backfill\n---------------------------\n");
     console.log("Starting on epoch: " + epoch + "\n");
