@@ -14,6 +14,9 @@ const debug = process.env.DEBUG;
 // Immediately invoked async function
 (async () => {
 
+    // We want to track how long this process takes.
+    const start = Date.now();
+
     // Read validators and chunk them up. Beaconcha.in api allows 100 validators per request.
     const validators = readValidators();
     const validatorChunks = chunkArray(validators, 100); 
@@ -35,7 +38,8 @@ const debug = process.env.DEBUG;
         console.log('Current epoch: ' + currentEpoch.data.epoch);
         nextEpoch = parseInt(nextEpoch) + 100;
         if(nextEpoch > currentEpoch.data.epoch) {
-            console.log('Backfill Complete');
+            console.log('Backfill Complete on Epoch ' + nextEpoch + '!');
+            console.log('Total time: ' + ((Date.now() - start) / 1000) + ' seconds');
             process.exit();
         }
 
