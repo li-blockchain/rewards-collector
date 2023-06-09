@@ -37,7 +37,7 @@ const debug = process.env.DEBUG;
         const currentEpoch = await getLatestEpoch();
         console.log('Current epoch: ' + currentEpoch.data.epoch);
         nextEpoch = parseInt(nextEpoch) + 100;
-        if(nextEpoch > currentEpoch.data.epoch) {
+        if(nextEpoch > currentEpoch.data.epoch && currentEpoch.data.epoch > 0) {
             console.log('Backfill Complete on Epoch ' + nextEpoch + '!');
             console.log('Total time: ' + ((Date.now() - start) / 1000) + ' seconds');
             process.exit();
