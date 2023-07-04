@@ -20,7 +20,8 @@ const debug = process.env.DEBUG;
     const validatorChunks = chunkArray(validators, 100); 
 
     // Get our starting epoch. 
-    const epoch = await getLatestEpoch();
+    let startEpoch = process.env.EPOCH_WATCH_START;
+    let latestEpoch = await getLatestEpoch();
 
     // Our epoch interval is how often we check for new rewards. Beaconcha.in goes 100 epochs at a time.
     let epochInterval;
@@ -34,26 +35,24 @@ const debug = process.env.DEBUG;
     console.log("\n---------------------------\nLIBC Validator Monitor\n---------------------------\n");
     console.log('Checking every ' + epochInterval + ' epochs for new rewards.\n');
 
-    // First run.
-    const rewards = await extractRewards(validatorChunks, epoch.data.epoch);
-    saveRewards(rewards);
-
     // Every 1 minute check for new epoch.
     setInterval(async () => {
         console.log('Checking for new epoch...')
-        const latestEpoch = await getLatestEpoch();
-        // If the latest epoch is 100 epochs ahead of the current epoch, then we have a new epoch.
-        console.log('Current epoch: ' + latestEpoch.data.epoch);
-        // Add 100 to the epoch interval to account for the current epoch as an integer
-        let nextCheck = parseInt(latestEpoch.data.epoch) + parseInt(epochInterval);
-        console.log('Next rewards check Epoch: ' + nextCheck + '\n')
-        if (latestEpoch.data.epoch >= nextCheck) {
-            if(debug) {
-                console.log('Checking for new rewards');
-            }
-            const rewards = await extractRewards(validatorChunks, latestEpoch.data.epoch);
-            saveRewards(rewards);
+        latestEpoch = await getLatestEpoch();
+
+        // If we are currently not yet at the starting epoch then don't do anything yet.
+        if(latestEpoch.data.epoch < parseInt(startEpoch)) {
+            console.log(`Not yet at starting epoch of ${startEpoch} Waiting...`);
+            return;
         }
+
+        // Save the rewards for latest epoch (this includes the previous `epochInterval` epochs)
+        const rewards = await extractRewards(validatorChunks, latestEpoch.data.epoch);
+        saveRewards(rewards);
+
+        // Set the next starting epoch to check for rewards.
+        startEpoch = parseInt(latestEpoch.data.epoch) + parseInt(epochInterval);
+
     }, 60000);
     
 })();
