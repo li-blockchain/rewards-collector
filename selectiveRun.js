@@ -23,8 +23,16 @@ const debug = process.env.DEBUG;
 
     console.log("\n---------------------------\nLIBC Validator Single Runner\n---------------------------\n");
 
+    // Get the epoch number from the command line argument
+    const epochNumber = process.argv[2]; // Assuming the epoch number is provided as the first argument
+
+    if (!epochNumber) {
+        console.error('Please provide the epoch number as a command line argument.');
+        return;
+    }
+
     // Save the rewards for latest epoch (this includes the previous `epochInterval` epochs)
-    const rewards = await extractRewards(validatorChunks, 212360);
+    const rewards = await extractRewards(validatorChunks, epochNumber);
     saveRewards(rewards);
         
 })();
