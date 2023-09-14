@@ -34,20 +34,20 @@ const debug = process.env.DEBUG;
     // Every 1 minute check for new epoch.
     let nextEpoch = epoch;
     setInterval(async () => {
-        const currentEpoch = await getLatestEpoch();
-        console.log('Current epoch: ' + currentEpoch.data.epoch);
+        const currentEpoch = await getLatestEpoch(0);
+        //console.log('Current epoch: ' + currentEpoch.data.epoch);
         nextEpoch = parseInt(nextEpoch) + 100;
         if(nextEpoch > currentEpoch.data.epoch && currentEpoch.data.epoch > 0) {
-            console.log('Backfill Complete on Epoch ' + nextEpoch + '!');
+            console.log('Backfill Complete on Epoch ' + (nextEpoch-100) + '!');
             console.log('Total time: ' + ((Date.now() - start) / 1000) + ' seconds');
             process.exit();
         }
 
-        console.log('Checking for new epoch: ' + nextEpoch + '\n')
+        console.log('Collecting rewards for: ' + nextEpoch + '\n')
 
         const rewards = await extractRewards(validatorChunks, nextEpoch);
         saveRewards(rewards);
 
-    }, 60000);
+    }, 15000);
 
 })();
