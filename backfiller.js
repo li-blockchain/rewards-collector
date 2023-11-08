@@ -29,7 +29,7 @@ const debug = process.env.DEBUG;
 
     // First run.
     const rewards = await extractRewards(validatorChunks, epoch);
-    saveRewards(rewards);
+    await saveRewards(rewards);
 
     // Every 1 minute check for new epoch.
     let nextEpoch = epoch;
@@ -46,8 +46,9 @@ const debug = process.env.DEBUG;
         console.log('Collecting rewards for: ' + nextEpoch + '\n')
 
         const rewards = await extractRewards(validatorChunks, nextEpoch);
-        saveRewards(rewards);
 
-    }, 15000);
+        await saveRewards(rewards);
+
+    }, 60000);
 
 })();
