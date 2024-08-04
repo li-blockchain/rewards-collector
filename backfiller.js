@@ -8,6 +8,9 @@ const { readValidators, extractRewards, getLatestEpoch } = require('./lib/reward
 const { saveRewards } = require('./lib/rewardSave.js');
 const { chunkArray } = require('./lib/utils.js');
 const fs = require('fs');
+const path = require('path');
+
+require('dotenv').config()
 
 // If set to true then additional output will be printed to the console.
 const debug = process.env.DEBUG;
@@ -48,9 +51,15 @@ client.once('ready', () => {
         // If the data/.lastepoch file exists then we want to start from there.
         // This is useful if the process is interrupted.
         // If the file does not exist then we will start from the EPOCH_START env variable.
+	
+	// Assuming DATA_DIR is an environment variable holding the directory path
+	const dataDir = process.env.DATA_DIR;
 
-        if(fs.existsSync('./data/.lastepoch')) {
-            const lastEpoch = fs.readFileSync('./data/.lastepoch', 'utf8');
+	// Construct the full file path
+	const filePath = path.join(dataDir, '.lastepoch');
+
+        if(fs.existsSync(filePath)) {
+            const lastEpoch = fs.readFileSync(filePath, 'utf8');
 
             // validate lastEpoch is a number.
             if(isNaN(lastEpoch)) {
@@ -61,6 +70,10 @@ client.once('ready', () => {
             console.log('Using .lastepoch file: ' + lastEpoch);
             process.env.EPOCH_START = lastEpoch;
         }
+	else {
+	   console.log("No .lastepoch found");
+           console.log(filePath);
+	}
 
         // Get our starting epoch. 
         const epoch = process.env.EPOCH_START
@@ -77,10 +90,15 @@ client.once('ready', () => {
         setInterval(async () => {
             const currentEpoch = await getLatestEpoch(0);
             console.log('Current epoch: ' + currentEpoch.data.epoch);
+            if (!currentEpoch || !currentEpoch.data) {
+		 console.error('Failed to retrieve current epoch data.');
+            	// You might want to retry or take some other action here
+            	return; // Skip this iteration
+	    }		
             nextEpoch = parseInt(nextEpoch) + 100;
             if(nextEpoch > currentEpoch.data.epoch && currentEpoch.data.epoch > 0) {
                 // Save nextEpoch to data/.lastepoch file
-                fs.writeFileSync('./data/.lastepoch', String(nextEpoch-100));
+                fs.writeFileSync(filePath, String(nextEpoch-100));
 
                 console.log('Backfill Complete on Epoch ' + (nextEpoch-100) + '!');
                 console.log('Total time: ' + ((Date.now() - start) / 1000) + ' seconds');
