@@ -80,7 +80,7 @@ client.once('ready', () => {
             nextEpoch = parseInt(nextEpoch) + 100;
             if(nextEpoch > currentEpoch.data.epoch && currentEpoch.data.epoch > 0) {
                 // Save nextEpoch to data/.lastepoch file
-                fs.writeFileSync('./data/.lastepoch', String(nextEpoch));
+                fs.writeFileSync('./data/.lastepoch', String(nextEpoch-100));
 
                 console.log('Backfill Complete on Epoch ' + (nextEpoch-100) + '!');
                 console.log('Total time: ' + ((Date.now() - start) / 1000) + ' seconds');
@@ -96,7 +96,7 @@ client.once('ready', () => {
             const rewards = await extractRewards(validatorChunks, nextEpoch);
             await saveRewards(rewards);
 
-        }, 10000);
+        }, 60000);
 
     })();
 });
