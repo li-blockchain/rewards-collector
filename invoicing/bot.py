@@ -5,6 +5,7 @@ from ai.ai_handler import handle_ai_query
 from dotenv import load_dotenv
 from commands.earnings import generate_earnings_report
 from commands.date_to_epoch import date_to_epoch
+from commands.rocketpool_cycles import get_rocketpool_cycle
 import datetime
 
 # Load environment variables from .env file
@@ -58,6 +59,38 @@ async def on_message(message):
     if message.content.startswith('!yo'):
         query = message.content[3:]  # Remove the '!ai' prefix
         response = await handle_ai_query(query)
+
+        if response.startswith('!cycles'):
+            try:
+                # Split the message content to get the command and parameters
+                parts = response.split()
+                # await message.channel.send(f"parts: {parts}")
+                if len(parts) == 1:
+                    # No date given return a date in the middle of the current month.
+                    # If we are on the last week then increment the month by one.
+                    today = datetime.datetime.now()
+                    # Check if we're in the last week of the month
+                    if today.day > 21:
+                        # Move to the middle of next month
+                        next_month = today.replace(day=1) + datetime.timedelta(days=32)
+                        date_obj = next_month.replace(day=15)
+                    else:
+                        # Use the middle of the current month
+                        date_obj = today.replace(day=15)
+                    
+                    cycle_info = get_rocketpool_cycle(date_obj.date())
+                    await message.channel.send(f"Current cycle: Cycle {cycle_info['cycle_number']}, From: {cycle_info['from_date']}, To: {cycle_info['to_date']}")
+                    return
+                
+                date = parts[1]
+                
+                cycle_info = get_rocketpool_cycle(date)
+                await message.channel.send(f"Cycle: {cycle_info['cycle_number']}, From: {cycle_info['from_date']}, To: {cycle_info['to_date']}")
+                return
+            except ValueError as e:
+                await message.channel.send("Invalid date format. Please ensure the date is in mm/dd/yyyy format.")
+            except Exception as e:
+                await message.channel.send(f"An error occurred: {str(e)}")
 
         # Check if the response contains an earnings command
         if response.startswith('!earnings'):
