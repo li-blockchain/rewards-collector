@@ -70,13 +70,15 @@ async def on_message(message):
                     # If we are on the last week then increment the month by one.
                     today = datetime.datetime.now()
                     # Check if we're in the last week of the month
-                    if today.day > 21:
-                        # Move to the middle of next month
-                        next_month = today.replace(day=1) + datetime.timedelta(days=32)
-                        date_obj = next_month.replace(day=15)
-                    else:
-                        # Use the middle of the current month
-                        date_obj = today.replace(day=15)
+                    # if today.day > 21:
+                    #     print(today.day)
+                    #     # Move to the middle of next month
+                    #     next_month = today.replace(day=1) + datetime.timedelta(days=32)
+                    #     date_obj = next_month.replace(day=15)
+                    # else:
+                    #     # Use the middle of the current month
+                    #     date_obj = today.replace(day=15)
+                    date_obj = today
                     
                     cycle_info = get_rocketpool_cycle(date_obj.date())
                     await message.channel.send(f"Current cycle: Cycle {cycle_info['cycle_number']}, From: {cycle_info['from_date']}, To: {cycle_info['to_date']}")
