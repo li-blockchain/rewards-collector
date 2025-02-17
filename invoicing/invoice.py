@@ -46,6 +46,7 @@ def calculate_document_name(epoch):
 def fetch_data(fromBlock, toBlock, collection_name):
     proposals = []
     withdrawals = []
+    exits = []
 
     start_doc = calculate_document_name(fromBlock)
     end_doc = calculate_document_name(toBlock)
@@ -53,12 +54,36 @@ def fetch_data(fromBlock, toBlock, collection_name):
     for doc in range(start_doc, end_doc + 100, 100):
         doc_ref = db.collection(collection_name).document(str(doc))
         doc = doc_ref.get()
+        # Empty epoch 339400
         if doc.exists:
             data = doc.to_dict()
-            proposals.extend([proposal for proposal in data.get('proposals', []) if fromBlock <= proposal['epoch'] <= toBlock])
-            withdrawals.extend([withdrawal for withdrawal in data.get('withdrawals', []) if fromBlock <= withdrawal['epoch'] <= toBlock])
+            if data:  # Check if data is not None
+                # Safely get proposals and withdrawals with default empty lists
+                doc_proposals = data.get('proposals', []) or []
+                doc_withdrawals = data.get('withdrawals', []) or []
+                
+                # Only process if we have valid epoch data
+                proposals.extend([
+                    p for p in doc_proposals 
+                    if p and 'epoch' in p and fromBlock <= p['epoch'] <= toBlock
+                ])
+                # Process withdrawals and track exits
+                for w in doc_withdrawals:
+                    if w and 'epoch' in w and fromBlock <= w['epoch'] <= toBlock:
+                        if w['amount'] > 32 * 10**9:  # 32 ETH in gwei
+                            # Create exit record with original withdrawal info
+                            exit_record = w.copy()
+                            exit_record['amount'] = 32 * 10**9
+                            exits.append(exit_record)
+                            
+                            # Adjust withdrawal amount
+                            w_adjusted = w.copy()
+                            w_adjusted['amount'] = w['amount'] - (32 * 10**9)  # Subtract 32 ETH in gwei
+                            withdrawals.append(w_adjusted)
+                        else:
+                            withdrawals.append(w)
 
-    return proposals, withdrawals
+    return proposals, withdrawals, exits
 
 def convert_wei_to_eth(wei):
     return wei / 10**18
@@ -66,35 +91,41 @@ def convert_wei_to_eth(wei):
 def convert_gwei_to_eth(gwei):
     return gwei / 10**9
 
-def aggregate_data(proposals, withdrawals):
+def aggregate_data(proposals, withdrawals, exits):
     proposals_df = pd.DataFrame(proposals)
     withdrawals_df = pd.DataFrame(withdrawals)
+    exits_df = pd.DataFrame(exits)
 
     # Adjust rewards based on validator type
     proposals_df['amount'] = proposals_df.apply(lambda x: adjust_reward(x['amount'], x['type']), axis=1)
     withdrawals_df['amount'] = withdrawals_df.apply(lambda x: adjust_reward(x['amount'], x['type']), axis=1)
+    exits_df['amount'] = exits_df.apply(lambda x: adjust_reward(x['amount'], x['type']), axis=1)
 
     # Convert amounts to ETH
     proposals_df['amount'] = proposals_df['amount'].apply(convert_wei_to_eth)
     withdrawals_df['amount'] = withdrawals_df['amount'].apply(convert_gwei_to_eth)
+    exits_df['amount'] = exits_df['amount'].apply(convert_gwei_to_eth)
 
     # Aggregate by node
     proposals_summary = proposals_df.groupby(['node']).agg({'amount': 'sum'}).reset_index()
     withdrawals_summary = withdrawals_df.groupby(['node']).agg({'amount': 'sum'}).reset_index()
+    exits_summary = exits_df.groupby(['node']).agg({'amount': 'sum'}).reset_index()
 
     total_proposals = proposals_df['amount'].sum()
     total_withdrawals = withdrawals_df['amount'].sum()
-    grand_total = total_proposals + total_withdrawals
+    total_exits = exits_df['amount'].sum()
+    grand_total = total_proposals + total_withdrawals  # Excluding exits from grand total
 
     combined_summary = pd.merge(proposals_summary, withdrawals_summary, on='node', how='outer').fillna(0)
-    combined_summary.rename(columns={'amount_x': 'total_proposals', 'amount_y': 'total_withdrawals'}, inplace=True)
+    combined_summary = pd.merge(combined_summary, exits_summary, on='node', how='outer').fillna(0)
+    combined_summary.rename(columns={'amount_x': 'total_proposals', 'amount_y': 'total_withdrawals', 'amount': 'total_exits'}, inplace=True)
 
     return combined_summary, total_proposals, total_withdrawals, grand_total
 
 def run_aggregator(fromBlock, toBlock, collection_name):
-    proposals, withdrawals = fetch_data(fromBlock, toBlock, collection_name)
+    proposals, withdrawals, exits = fetch_data(fromBlock, toBlock, collection_name)
 
-    combined_summary, total_proposals, total_withdrawals, grand_total = aggregate_data(proposals, withdrawals)
+    combined_summary, total_proposals, total_withdrawals, grand_total = aggregate_data(proposals, withdrawals, exits)
     
     result = {
         "combined_summary": combined_summary.to_dict(orient='records'),
@@ -106,14 +137,18 @@ def run_aggregator(fromBlock, toBlock, collection_name):
     return result
 
 if __name__ == "__main__":
-    fromBlock = 282497
-    toBlock = 288684
+    fromBlock = 338962 #282497
+    toBlock = 345037 #288684
     collection_name = 'rewards_v2'
 
     result = run_aggregator(fromBlock, toBlock, collection_name)
 
     print("Combined Summary:")
     print(result["combined_summary"])
+
+    print("\nExits Summary:")
+    for record in result["combined_summary"]:
+        print(f"Node: {record['node']}, Total Exits: {record['total_exits']}")
 
     print("\nTotals Summary:")
     print(f"Total Proposals: {result['total_proposals']}")

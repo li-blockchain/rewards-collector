@@ -69,7 +69,7 @@ async def on_message(message):
                     # No date given return a date in the middle of the current month.
                     # If we are on the last week then increment the month by one.
                     today = datetime.datetime.now()
-                    # Check if we're in the last week of the month
+                    # # Check if we're in the last week of the month
                     # if today.day > 21:
                     #     print(today.day)
                     #     # Move to the middle of next month
@@ -102,7 +102,6 @@ async def on_message(message):
                 if len(parts) != 3:
                     await message.channel.send("Invalid date format detected. Please provide both from and to dates.")
                     return
-
                 from_date = parts[1]
                 to_date = parts[2]
 

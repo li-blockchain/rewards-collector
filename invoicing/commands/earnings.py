@@ -17,6 +17,9 @@ def generate_earnings_report(fromEpoch, toEpoch, collection_name):
     response += f"Grand Total: {grand_total}\n"
     response += "\nCombined Summary:\n"
     for record in combined_summary:
-        response += f"Node: {record['node']}, Total Proposals: {record['total_proposals']}, Total Withdrawals: {record['total_withdrawals']}\n"
+        response += f"Node: {record['node']}, Total Proposals: {record['total_proposals']}, Total Withdrawals: {record['total_withdrawals']}"
+        if record['total_exits'] > 0:
+            response += f", Total Exits: {record['total_exits']}"
+        response += "\n"
     
     return response
