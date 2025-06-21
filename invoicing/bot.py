@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from commands.earnings import generate_earnings_report
 from commands.date_to_epoch import date_to_epoch
 from commands.rocketpool_cycles import get_rocketpool_cycle
+from commands.cdp import generate_cdp_report
 import datetime
 
 # Load environment variables from .env file
@@ -30,7 +31,7 @@ async def on_message(message):
         return
     
     if message.content.startswith('!help'):
-        await message.channel.send("Hi! I'm Clark. I can help you aggregate earnings data. I work nights. Usage: !earnings <fromEpoch> <toEpoch>")
+        await message.channel.send("Hi! I'm Clark. I can help you aggregate earnings data and monitor CDP positions. I work nights. Usage: !earnings <fromEpoch> <toEpoch> or !cdp for position status")
 
     if message.content.startswith('!earnings'):
         try:
@@ -55,6 +56,14 @@ async def on_message(message):
             await message.channel.send("Invalid block numbers. Please ensure fromEpoch and toEpoch are valid integers.")
         except Exception as e:
             await message.channel.send(f"An error occurred: {str(e)}")
+
+    if message.content.startswith('!cdp'):
+        try:
+            await message.channel.send("Checking CDP position status...")
+            response = generate_cdp_report()
+            await message.channel.send(response)
+        except Exception as e:
+            await message.channel.send(f"An error occurred while checking CDP position: {str(e)}")
 
     if message.content.startswith('!yo'):
         query = message.content[3:]  # Remove the '!ai' prefix
