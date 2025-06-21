@@ -95,16 +95,16 @@ This option uses Discord webhooks and avoids asyncio issues:
    - Create a new webhook and copy the URL
    - Add it to your `.env` file as `DISCORD_WEBHOOK_URL`
 
-2. **Set up cron job**:
+2. **Set up cron job with virtual environment**:
    ```bash
    # Check every 30 minutes
-   */30 * * * * cd /path/to/your/bot && python cdp_monitor_simple.py
+   */30 * * * * cd /path/to/your/bot && source venv/bin/activate && python cdp_monitor_simple.py
 
    # Check every hour
-   0 * * * * cd /path/to/your/bot && python cdp_monitor_simple.py
+   0 * * * * cd /path/to/your/bot && source venv/bin/activate && python cdp_monitor_simple.py
 
    # Check every 4 hours
-   0 */4 * * * cd /path/to/your/bot && python cdp_monitor_simple.py
+   0 */4 * * * * cd /path/to/your/bot && source venv/bin/activate && python cdp_monitor_simple.py
    ```
 
 #### Option 2: Bot-Based Monitoring
@@ -113,14 +113,81 @@ This option uses the full Discord bot client:
 
 ```bash
 # Check every 30 minutes
-*/30 * * * * cd /path/to/your/bot && python cdp_monitor.py
+*/30 * * * * cd /path/to/your/bot && source venv/bin/activate && python cdp_monitor.py
 
 # Check every hour
-0 * * * * cd /path/to/your/bot && python cdp_monitor.py
+0 * * * * cd /path/to/your/bot && source venv/bin/activate && python cdp_monitor.py
 
 # Check every 4 hours
-0 */4 * * * cd /path/to/your/bot && python cdp_monitor.py
+0 */4 * * * * cd /path/to/your/bot && source venv/bin/activate && python cdp_monitor.py
 ```
+
+### Alternative Cron Setup Methods
+
+#### Method 1: Using a Shell Script Wrapper
+
+Create a shell script to handle the environment setup:
+
+```bash
+# Create cdp_monitor_wrapper.sh
+#!/bin/bash
+cd /path/to/your/bot
+source venv/bin/activate
+python cdp_monitor_simple.py
+```
+
+Make it executable:
+```bash
+chmod +x cdp_monitor_wrapper.sh
+```
+
+Then use in cron:
+```bash
+# Check every 30 minutes
+*/30 * * * * /path/to/your/bot/cdp_monitor_wrapper.sh
+```
+
+#### Method 2: Using Full Paths
+
+Specify the full path to Python in your virtual environment:
+
+```bash
+# Check every 30 minutes
+*/30 * * * * cd /path/to/your/bot && /path/to/your/bot/venv/bin/python cdp_monitor_simple.py
+```
+
+#### Method 3: Environment Variables in Cron
+
+Add environment variables directly to the cron job:
+
+```bash
+# Check every 30 minutes
+*/30 * * * * cd /path/to/your/bot && source venv/bin/activate && RPC_URL=http://localhost:8545 CDP_POSITION_ADDRESS=0xYourAddress DISCORD_WEBHOOK_URL=your-webhook-url python cdp_monitor_simple.py
+```
+
+### Testing Your Cron Setup
+
+1. **Test the script manually first**:
+   ```bash
+   cd /path/to/your/bot
+   source venv/bin/activate
+   python cdp_monitor_simple.py
+   ```
+
+2. **Test the cron command**:
+   ```bash
+   # Run the exact cron command manually
+   cd /path/to/your/bot && source venv/bin/activate && python cdp_monitor_simple.py
+   ```
+
+3. **Check cron logs**:
+   ```bash
+   # View cron logs
+   tail -f /var/log/cron
+
+   # Or check system logs
+   journalctl -u cron
+   ```
 
 The monitoring scripts will:
 - Check your position health
@@ -148,6 +215,7 @@ You'll receive alerts when:
 
 1. **"CDP_POSITION_ADDRESS environment variable not set"**
    - Make sure you've set the correct position address in your `.env` file
+   - Ensure the `.env` file is in the correct directory when running from cron
 
 2. **"Failed to connect to Ethereum node"**
    - Check your RPC_URL is correct and your node is running
@@ -167,9 +235,19 @@ You'll receive alerts when:
    - Create a Discord webhook and add the URL to your `.env` file
    - Ensure the webhook URL is valid and accessible
 
-6. **SSL Transport Errors** (bot-based monitoring)
+6. **"SSL Transport Errors"** (bot-based monitoring)
    - Use the simple webhook-based monitoring script instead
    - The webhook version avoids asyncio cleanup issues
+
+7. **"Module not found" or "Import errors" in cron**
+   - Ensure the virtual environment is properly activated in the cron job
+   - Check that all dependencies are installed in the virtual environment
+   - Verify the working directory is correct
+
+8. **"Environment variables not found" in cron**
+   - The `.env` file must be in the working directory when the script runs
+   - Consider using Method 3 above to set environment variables directly in cron
+   - Or use a shell script wrapper to ensure proper environment setup
 
 ### Node Requirements
 
