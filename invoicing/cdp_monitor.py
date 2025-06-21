@@ -11,6 +11,7 @@ import discord
 from dotenv import load_dotenv
 from commands.cdp import check_cdp_health
 import logging
+import signal
 
 # Load environment variables
 load_dotenv()
@@ -39,6 +40,7 @@ class CDPAlertBot:
             raise ValueError("CDP_ALERT_CHANNEL_ID environment variable not set")
         
         self.client = discord.Client(intents=discord.Intents.default())
+        self._task_complete = False
         
     async def send_alert(self, message: str):
         """Send alert message to Discord channel"""
@@ -76,31 +78,64 @@ class CDPAlertBot:
             error_message = f"❌ **CDP Monitor Error** ❌\n\nError checking CDP health: {str(e)}"
             await self.send_alert(error_message)
             logger.error(f"Error in CDP health check: {e}")
+        finally:
+            # Mark task as complete
+            self._task_complete = True
     
     async def run(self):
         """Run the alert bot"""
         try:
+            # Set up the on_ready event handler
+            @self.client.event
+            async def on_ready():
+                logger.info(f'CDP Monitor bot logged in as {self.client.user}')
+                await self.check_and_alert()
+                # Close the client after the task is complete
+                await self.client.close()
+            
+            # Start the client
             await self.client.start(self.token)
+            
         except Exception as e:
             logger.error(f"Error starting Discord client: {e}")
+            raise
 
 async def main():
     """Main function to run the CDP monitor"""
+    bot = None
     try:
         bot = CDPAlertBot()
-        
-        # Wait for bot to be ready
-        @bot.client.event
-        async def on_ready():
-            logger.info(f'CDP Monitor bot logged in as {bot.client.user}')
-            await bot.check_and_alert()
-            await bot.client.close()
-        
         await bot.run()
         
+    except KeyboardInterrupt:
+        logger.info("Received interrupt signal, shutting down...")
     except Exception as e:
         logger.error(f"Error in main: {e}")
         sys.exit(1)
+    finally:
+        # Ensure proper cleanup
+        if bot and bot.client and not bot.client.is_closed():
+            try:
+                await bot.client.close()
+                logger.info("Discord client closed successfully")
+            except Exception as e:
+                logger.error(f"Error closing Discord client: {e}")
+
+def signal_handler(signum, frame):
+    """Handle interrupt signals"""
+    logger.info(f"Received signal {signum}, shutting down...")
+    sys.exit(0)
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    try:
+        # Run the async main function
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Script interrupted by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        sys.exit(1) 

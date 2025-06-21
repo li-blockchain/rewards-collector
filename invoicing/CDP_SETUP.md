@@ -28,14 +28,18 @@ RPC_URL=http://localhost:8545
 # Alternative connection types:
 # RPC_URL=ws://localhost:8546          # WebSocket
 # RPC_URL=ipc:///path/to/geth.ipc      # IPC (Unix domain socket)
+
+# Discord Webhook (for simple monitoring script)
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your-webhook-url
 ```
 
 ### Configuration Details
 
 - `CDP_POSITION_ADDRESS`: The Ethereum address of your CDP position (wallet/contract address)
 - `CDP_HEALTH_THRESHOLD`: Minimum collateralization ratio (default: 1.5 = 150%)
-- `CDP_ALERT_CHANNEL_ID`: Discord channel ID where alerts should be sent
+- `CDP_ALERT_CHANNEL_ID`: Discord channel ID where alerts should be sent (for bot-based monitoring)
 - `RPC_URL`: Connection to your local Ethereum node
+- `DISCORD_WEBHOOK_URL`: Discord webhook URL for simple monitoring script
 
 ### Node Connection Types
 
@@ -79,7 +83,33 @@ This will return a detailed report including:
 
 ### Automated Monitoring
 
-Set up a cron job to automatically monitor your position:
+You have two options for automated monitoring:
+
+#### Option 1: Simple Webhook-Based Monitoring (Recommended)
+
+This option uses Discord webhooks and avoids asyncio issues:
+
+1. **Create a Discord Webhook**:
+   - Go to your Discord channel settings
+   - Select "Integrations" → "Webhooks"
+   - Create a new webhook and copy the URL
+   - Add it to your `.env` file as `DISCORD_WEBHOOK_URL`
+
+2. **Set up cron job**:
+   ```bash
+   # Check every 30 minutes
+   */30 * * * * cd /path/to/your/bot && python cdp_monitor_simple.py
+
+   # Check every hour
+   0 * * * * cd /path/to/your/bot && python cdp_monitor_simple.py
+
+   # Check every 4 hours
+   0 */4 * * * cd /path/to/your/bot && python cdp_monitor_simple.py
+   ```
+
+#### Option 2: Bot-Based Monitoring
+
+This option uses the full Discord bot client:
 
 ```bash
 # Check every 30 minutes
@@ -92,7 +122,7 @@ Set up a cron job to automatically monitor your position:
 0 */4 * * * cd /path/to/your/bot && python cdp_monitor.py
 ```
 
-The monitoring script will:
+The monitoring scripts will:
 - Check your position health
 - Send alerts to Discord if the position is at risk
 - Log all activities to `cdp_monitor.log`
@@ -129,9 +159,17 @@ You'll receive alerts when:
    - Check your node is fully synced
    - Ensure your node supports the required RPC methods
 
-4. **"Could not find Discord channel"**
+4. **"Could not find Discord channel"** (bot-based monitoring)
    - Ensure CDP_ALERT_CHANNEL_ID is set to a valid channel ID
    - Make sure the bot has permissions to send messages in that channel
+
+5. **"DISCORD_WEBHOOK_URL environment variable not set"** (webhook-based monitoring)
+   - Create a Discord webhook and add the URL to your `.env` file
+   - Ensure the webhook URL is valid and accessible
+
+6. **SSL Transport Errors** (bot-based monitoring)
+   - Use the simple webhook-based monitoring script instead
+   - The webhook version avoids asyncio cleanup issues
 
 ### Node Requirements
 
@@ -153,4 +191,5 @@ Check the `cdp_monitor.log` file for detailed error messages and monitoring acti
 - Use a dedicated Discord bot token for monitoring
 - Your local node connection is more secure than external RPC providers
 - Regularly review and update your health threshold based on market conditions
-- Consider using a dedicated monitoring node to avoid impacting your main node's performance 
+- Consider using a dedicated monitoring node to avoid impacting your main node's performance
+- Webhook URLs should be kept secret as they allow posting to your Discord channel 
