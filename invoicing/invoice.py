@@ -152,8 +152,8 @@ def run_aggregator(fromBlock, toBlock, collection_name):
     return result
 
 if __name__ == "__main__":
-    fromBlock = 357862 #262912 #338962 #282497
-    toBlock = 358537 #269212 #345037 #288684
+    fromBlock = 370237 #262912 #338962 #282497
+    toBlock = 376537#269212 #345037 #288684
     collection_name = 'rewards_v3'
 
     result = run_aggregator(fromBlock, toBlock, collection_name)

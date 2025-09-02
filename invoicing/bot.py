@@ -25,7 +25,7 @@ async def on_ready():
 async def on_message(message):
     print(message.content)
 
-    collection_name = 'rewards_v2'
+    collection_name = 'rewards_v3'
 
     if message.author == client.user:
         return
