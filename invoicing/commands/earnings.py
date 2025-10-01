@@ -1,9 +1,10 @@
 from invoice import run_aggregator
 
 
-def generate_earnings_report(fromEpoch, toEpoch, collection_name):
-    # Run the rewards aggregator
-    result = run_aggregator(fromEpoch, toEpoch, collection_name)
+def generate_earnings_report(fromEpoch, toEpoch, parquet_file='rewards_data/rewards_master.parquet'):
+    """Generate earnings report from parquet data."""
+    # Run the rewards aggregator with parquet file
+    result = run_aggregator(fromEpoch, toEpoch, parquet_file)
 
     # Create a response message
     combined_summary = result["combined_summary"]
@@ -12,14 +13,11 @@ def generate_earnings_report(fromEpoch, toEpoch, collection_name):
     grand_total = result["grand_total"]
 
     response = "Earnings Summary:\n"
-    response += f"Total Proposals: {total_proposals}\n"
-    response += f"Total Withdrawals: {total_withdrawals}\n"
-    response += f"Grand Total: {grand_total}\n"
+    response += f"Total Proposals: {total_proposals:.6f} ETH\n"
+    response += f"Total Withdrawals: {total_withdrawals:.6f} ETH\n"
+    response += f"Grand Total: {grand_total:.6f} ETH\n"
     response += "\nCombined Summary:\n"
     for record in combined_summary:
-        response += f"Node: {record['node']}, Total Proposals: {record['total_proposals']}, Total Withdrawals: {record['total_withdrawals']}"
-        #if record['total_exits'] > 0:
-        #    response += f", Total Exits: {record['total_exits']}"
-        response += "\n"
-    
+       response += f"Node: {record['node']}, Total Proposals: {record['total_proposals']:.6f} ETH, Total Withdrawals: {record['total_withdrawals']:.6f} ETH\n"
+
     return response
