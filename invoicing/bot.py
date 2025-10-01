@@ -8,6 +8,8 @@ from commands.date_to_epoch import date_to_epoch
 from commands.rocketpool_cycles import get_rocketpool_cycle
 from commands.cdp import generate_cdp_report
 import datetime
+from pathlib import Path
+from generate_invoice import InvoiceGenerator
 
 # Load environment variables from .env file
 load_dotenv()
@@ -25,13 +27,13 @@ async def on_ready():
 async def on_message(message):
     print(message.content)
 
-    collection_name = 'rewards_v2'
+    parquet_file = 'rewards_data/rewards_master.parquet'
 
     if message.author == client.user:
         return
     
     if message.content.startswith('!help'):
-        await message.channel.send("Hi! I'm Clark. I can help you aggregate earnings data and monitor CDP positions. I work nights. Usage: !earnings <fromEpoch> <toEpoch> or !cdp for position status")
+        await message.channel.send("Hi! I'm Clark. I can help you aggregate earnings data and monitor CDP positions. I work nights.\n\n**Commands:**\n`!earnings <fromEpoch> <toEpoch>` - Get earnings summary\n`!invoice <fromEpoch> <toEpoch>` - Generate and download full invoice (Excel)\n`!cdp` - Check CDP position status")
 
     if message.content.startswith('!earnings'):
         try:
@@ -47,15 +49,54 @@ async def on_message(message):
             await message.channel.send(f"Gotcha. Aggregating some earnings data from epoch {fromEpoch} to epoch {toEpoch}... hold please.")
 
 
-            print(f"Running rewards aggregator from epoch {fromEpoch} to epoch {toEpoch} for collection {collection_name}")
+            print(f"Running rewards aggregator from epoch {fromEpoch} to epoch {toEpoch} from parquet file {parquet_file}")
 
-            response = generate_earnings_report(fromEpoch, toEpoch, collection_name)
+            response = generate_earnings_report(fromEpoch, toEpoch, parquet_file)
 
             await message.channel.send(response)
         except ValueError:
             await message.channel.send("Invalid block numbers. Please ensure fromEpoch and toEpoch are valid integers.")
         except Exception as e:
             await message.channel.send(f"An error occurred: {str(e)}")
+
+    if message.content.startswith('!invoice'):
+        try:
+            # Split the message content to get the command and parameters
+            parts = message.content.split()
+            if len(parts) != 3:
+                await message.channel.send("Please provide both fromEpoch and toEpoch. Usage: !invoice <fromEpoch> <toEpoch>")
+                return
+
+            fromEpoch = int(parts[1])
+            toEpoch = int(parts[2])
+
+            await message.channel.send(f"📊 Generating professional invoice for epochs {fromEpoch} to {toEpoch}... this may take a moment.")
+
+            # Generate the invoice
+            output_file = f"invoices/invoice_epochs_{fromEpoch}_{toEpoch}.xlsx"
+            generator = InvoiceGenerator(parquet_file)
+            generator.create_professional_invoice(
+                output_file,
+                fromEpoch,
+                toEpoch,
+                client_name="Valued Client",
+                invoice_number=None
+            )
+
+            # Upload the file to Discord
+            invoice_path = Path(output_file)
+            if invoice_path.exists():
+                await message.channel.send(
+                    f"✅ Invoice generated successfully!",
+                    file=discord.File(invoice_path)
+                )
+            else:
+                await message.channel.send("❌ Failed to generate invoice file.")
+
+        except ValueError:
+            await message.channel.send("Invalid epoch numbers. Please ensure fromEpoch and toEpoch are valid integers.")
+        except Exception as e:
+            await message.channel.send(f"An error occurred while generating invoice: {str(e)}")
 
     if message.content.startswith('!cdp'):
         try:
@@ -132,7 +173,7 @@ async def on_message(message):
                 await message.channel.send(f"Boom. Aggregating some earnings data from epoch {from_epoch} to epoch {to_epoch}... hold please.")
 
                 # Generate and send the earnings report
-                earnings_response = generate_earnings_report(from_epoch, to_epoch, collection_name)
+                earnings_response = generate_earnings_report(from_epoch, to_epoch, parquet_file)
                 await message.channel.send(earnings_response)
                 return  # Exit the function after handling the earnings command
 

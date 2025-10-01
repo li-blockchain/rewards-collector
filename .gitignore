@@ -150,4 +150,9 @@ poetry.lock
 .ipynb_checkpoints/
 
 # System files
-.DS_Store
+.DS_Store# Invoicing Python files
+invoicing/rewards_data/
+invoicing/invoices/
+*.parquet
+*.parquet.backup
+invoicing/.vscode/

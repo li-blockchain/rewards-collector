@@ -1,87 +1,59 @@
 # rewards_aggregator.py
-import firebase_admin
-from firebase_admin import credentials, firestore
 import pandas as pd
 import json
+from pathlib import Path
+from reward_utils import adjust_reward
 
-# Initialize Firebase
-cred = credentials.Certificate('../serviceAccountKey.json')
-firebase_admin.initialize_app(cred)
+def fetch_data(fromBlock, toBlock, parquet_file):
+    """Fetch data from parquet file for given epoch range."""
+    # Load parquet file
+    if not Path(parquet_file).exists():
+        raise FileNotFoundError(f"Parquet file not found: {parquet_file}")
 
-db = firestore.client()
+    df = pd.read_parquet(parquet_file)
 
-def adjust_reward(amount, type):
-    """
-    Adjust the reward based on the type of validator.
+    # Filter by epoch range
+    df_filtered = df[(df['epoch'] >= fromBlock) & (df['epoch'] <= toBlock)].copy()
 
-    Parameters:
-    amount (float): The amount to adjust.
-    type (float): The type of validator.
+    # Separate withdrawals and proposals
+    withdrawals_df = df_filtered[df_filtered['record_type'] == 'withdrawal'].copy()
+    proposals_df = df_filtered[df_filtered['record_type'] == 'proposal'].copy()
 
-    Returns:
-    int: The adjusted reward.
-    """
-    try:
-        type = int(float(type))
-    except ValueError:
-        return amount
-
-    # LEB8
-    if 8 <= type < 15:
-        bonded = amount // 4
-        borrowed = amount - bonded
-        return int(bonded + borrowed * 0.14)
-
-    # LEB16
-    if 16 <= type < 17:
-        bonded = amount // 2
-        borrowed = amount - bonded
-        return int(bonded + borrowed * 0.15)
-
-    return amount
-
-def calculate_document_name(epoch):
-    return ((epoch + 99) // 100) * 100
-
-def fetch_data(fromBlock, toBlock, collection_name):
+    # Convert to list of dicts for compatibility with existing code
     proposals = []
     withdrawals = []
     exits = []
 
-    start_doc = calculate_document_name(fromBlock)
-    end_doc = calculate_document_name(toBlock)
+    # Process proposals
+    for _, row in proposals_df.iterrows():
+        proposals.append({
+            'amount': row['amount'],
+            'epoch': row['epoch'],
+            'node': row['node'],
+            'type': row['validator_type']
+        })
 
-    for doc in range(start_doc, end_doc + 100, 100):
-        doc_ref = db.collection(collection_name).document(str(doc))
-        doc = doc_ref.get()
-        # Empty epoch 339400
-        if doc.exists:
-            data = doc.to_dict()
-            if data:  # Check if data is not None
-                # Safely get proposals and withdrawals with default empty lists
-                doc_proposals = data.get('proposals', []) or []
-                doc_withdrawals = data.get('withdrawals', []) or []
-                
-                # Only process if we have valid epoch data
-                proposals.extend([
-                    p for p in doc_proposals 
-                    if p and 'epoch' in p and fromBlock <= p['epoch'] <= toBlock
-                ])
-                # Process withdrawals and track exits
-                for w in doc_withdrawals:
-                    if w and 'epoch' in w and fromBlock <= w['epoch'] <= toBlock:
-                        if w['amount'] > 32 * 10**9:  # 32 ETH in gwei
-                            # Create exit record with original withdrawal info
-                            exit_record = w.copy()
-                            exit_record['amount'] = 32 * 10**9
-                            exits.append(exit_record)
-                            
-                            # Adjust withdrawal amount
-                            w_adjusted = w.copy()
-                            w_adjusted['amount'] = w['amount'] - (32 * 10**9)  # Subtract 32 ETH in gwei
-                            withdrawals.append(w_adjusted)
-                        else:
-                            withdrawals.append(w)
+    # Process withdrawals and track exits
+    for _, row in withdrawals_df.iterrows():
+        withdrawal_record = {
+            'amount': row['amount'],
+            'epoch': row['epoch'],
+            'node': row['node'],
+            'type': row['validator_type']
+        }
+
+        # Handle exits (withdrawals > 32 ETH)
+        if row['amount'] > 32 * 10**9:  # 32 ETH in gwei
+            # Create exit record
+            exit_record = withdrawal_record.copy()
+            exit_record['amount'] = 32 * 10**9
+            exits.append(exit_record)
+
+            # Adjust withdrawal amount
+            withdrawal_record['amount'] = row['amount'] - (32 * 10**9)
+            withdrawals.append(withdrawal_record)
+        else:
+            withdrawals.append(withdrawal_record)
 
     return proposals, withdrawals, exits
 
@@ -134,8 +106,8 @@ def aggregate_data(proposals, withdrawals):
 
     return combined_summary, total_proposals, total_withdrawals, grand_total
 
-def run_aggregator(fromBlock, toBlock, collection_name):
-    proposals, withdrawals, exits = fetch_data(fromBlock, toBlock, collection_name)
+def run_aggregator(fromBlock, toBlock, parquet_file='rewards_data/rewards_master.parquet'):
+    proposals, withdrawals, exits = fetch_data(fromBlock, toBlock, parquet_file)
 
     print(f"proposals: {len(proposals)}, withdrawals: {len(withdrawals)}, exits: {len(exits)}")
 
@@ -152,11 +124,11 @@ def run_aggregator(fromBlock, toBlock, collection_name):
     return result
 
 if __name__ == "__main__":
-    fromBlock = 357862 #262912 #338962 #282497
-    toBlock = 358537 #269212 #345037 #288684
-    collection_name = 'rewards_v3'
+    fromBlock = 383059 #389362 #357862 #262912 #338962 #282497
+    toBlock = 389306 #395437 #358537 #269212 #345037 #288684
+    parquet_file = 'rewards_data/rewards_master.parquet'
 
-    result = run_aggregator(fromBlock, toBlock, collection_name)
+    result = run_aggregator(fromBlock, toBlock, parquet_file)
 
     print("Combined Summary:")
     print(result["combined_summary"])

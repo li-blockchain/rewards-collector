@@ -38,6 +38,7 @@ multidict==6.0.5
 numpy==1.26.4
 openai==1.43.0
 pandas==2.2.2
+pyarrow>=10.0.0
 proto-plus==1.23.0
 protobuf==4.25.3
 pyasn1==0.6.0
