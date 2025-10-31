@@ -99,13 +99,20 @@ class InvoiceGenerator:
             'validator_index': 'nunique'
         }).reset_index()
 
+        # Calculate block proposal statistics
+        proposals_df = df_calc[df_calc['record_type'] == 'proposal']
+        total_blocks_proposed = len(proposals_df)
+        highest_value_block = proposals_df['amount_eth'].max() if len(proposals_df) > 0 else 0
+
         return {
             'total_withdrawals': total_withdrawals,
             'total_proposals': total_proposals,
             'grand_total': grand_total,
             'total_validators': total_validators,
             'node_breakdown': node_breakdown,
-            'record_count': len(df_calc)
+            'record_count': len(df_calc),
+            'total_blocks_proposed': total_blocks_proposed,
+            'highest_value_block': highest_value_block
         }
 
     def calculate_rate_of_return(self, df, total_earnings, epoch_duration):
@@ -338,6 +345,25 @@ class InvoiceGenerator:
                         cell.alignment = Alignment(horizontal='right')
 
                 current_row += 1
+
+            # Add summary metrics for block proposals
+            current_row += 1
+
+            # Total Blocks Proposed
+            ws[f'A{current_row}'] = "Total Blocks Proposed:"
+            ws[f'A{current_row}'].font = Font(name='Arial', size=10, bold=True)
+            ws[f'B{current_row}'] = earnings['total_blocks_proposed']
+            ws[f'B{current_row}'].font = normal_font
+            ws[f'B{current_row}'].alignment = Alignment(horizontal='right')
+
+            current_row += 1
+
+            # Highest Value Block
+            ws[f'A{current_row}'] = "Highest Value Block:"
+            ws[f'A{current_row}'].font = Font(name='Arial', size=10, bold=True)
+            ws[f'B{current_row}'] = f"{earnings['highest_value_block']:.6f} ETH"
+            ws[f'B{current_row}'].font = normal_font
+            ws[f'B{current_row}'].alignment = Alignment(horizontal='right')
 
         current_row += 3
 
