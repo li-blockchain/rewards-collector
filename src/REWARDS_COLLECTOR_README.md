@@ -2,7 +2,7 @@
 
 A Python implementation to extract Ethereum validator rewards using the Beaconcha.in API and save them to efficient Parquet files.
 
-This replaces the Node.js implementation with better performance, no rate limiting concerns, and columnar Parquet storage instead of Firebase.
+Features efficient Parquet columnar storage for analytics.
 
 ## Features
 
@@ -15,7 +15,7 @@ This replaces the Node.js implementation with better performance, no rate limiti
 ## Installation
 
 ```bash
-cd invoicing
+cd src
 pip install -r requirements.txt
 ```
 

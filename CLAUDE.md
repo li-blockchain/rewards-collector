@@ -9,13 +9,13 @@ This is a Validator Performance Aggregator (aka rewards-collector) that extracts
 ## Architecture
 
 **Core Components:**
-- `invoicing/rewards_collector.py` - Single epoch rewards collection with Parquet output
-- `invoicing/rewards_monitor.py` - Continuous monitoring daemon
-- `invoicing/rewards_backfiller.py` - Historical data backfilling with Discord notifications
-- `invoicing/bot.py` - Discord bot for queries and notifications
-- `invoicing/cdp_monitor.py` - CDP position monitoring with alerts
-- `invoicing/invoice.py` - Invoice generation with LEB adjustments
-- `invoicing/generate_invoice.py` - Invoice export to Excel
+- `src/rewards_collector.py` - Single epoch rewards collection with Parquet output
+- `src/rewards_monitor.py` - Continuous monitoring daemon
+- `src/rewards_backfiller.py` - Historical data backfilling with Discord notifications
+- `src/bot.py` - Discord bot for queries and notifications
+- `src/cdp_monitor.py` - CDP position monitoring with alerts
+- `src/invoice.py` - Invoice generation with LEB adjustments
+- `src/generate_invoice.py` - Invoice export to Excel
 
 **Data Flow:**
 1. Validator indices read from CSV files in `data/` directory
@@ -27,7 +27,7 @@ This is a Validator Performance Aggregator (aka rewards-collector) that extracts
 
 ```bash
 # Install dependencies
-cd invoicing
+cd src
 pip install -r requirements.txt
 
 # Single epoch collection

@@ -46,8 +46,8 @@ logs/
 
 # Data and output (kept locally, not committed)
 data/
-invoicing/rewards_data/
-invoicing/invoices/
+src/rewards_data/
+src/invoices/
 *.parquet
 *.parquet.backup
 

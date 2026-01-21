@@ -16,7 +16,7 @@ A Python-based toolkit for extracting Ethereum validator rewards using the Beaco
 
 ```bash
 # Install dependencies
-cd invoicing
+cd src
 pip install -r requirements.txt
 
 # Configure environment
@@ -35,8 +35,8 @@ python rewards_backfiller.py
 
 ## Documentation
 
-- [Rewards Collector Guide](invoicing/REWARDS_COLLECTOR_README.md) - Detailed usage for rewards collection
-- [CDP Setup Guide](invoicing/CDP_SETUP.md) - CDP monitoring configuration
+- [Rewards Collector Guide](src/REWARDS_COLLECTOR_README.md) - Detailed usage for rewards collection
+- [CDP Setup Guide](src/CDP_SETUP.md) - CDP monitoring configuration
 
 ## Configuration
 
@@ -64,7 +64,7 @@ The Type field is used for LEB (Liquid Ethereum Bond) reward adjustments:
 ## Project Structure
 
 ```
-invoicing/
+src/
 ├── rewards_collector.py   # Single epoch collection
 ├── rewards_monitor.py     # Continuous monitoring
 ├── rewards_backfiller.py  # Historical backfilling
