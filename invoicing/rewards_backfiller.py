@@ -3,7 +3,7 @@
 Ethereum Validator Rewards Backfiller
 
 Historical data collection script that fills in missing reward data.
-Similar to the Node.js backfiller.js but using Python and parquet output.
+Saves rewards data to efficient Parquet files for analytics.
 """
 
 import os

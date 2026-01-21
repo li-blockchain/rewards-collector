@@ -49,7 +49,7 @@ python rewards_collector.py 390000 --csv ../data/validators.csv --output ./outpu
 
 ### 2. Continuous Monitoring
 
-Run continuous monitoring (like the Node.js `index.js`):
+Run continuous monitoring:
 
 ```bash
 python rewards_monitor.py
@@ -62,7 +62,7 @@ This will:
 
 ### 3. Historical Backfilling
 
-Fill in historical data (like the Node.js `backfiller.js`):
+Fill in historical data:
 
 ```bash
 python rewards_backfiller.py
@@ -140,33 +140,6 @@ rewards_collector.py
 rewards_monitor.py: Continuous monitoring daemon
 rewards_backfiller.py: Historical data backfilling
 ```
-
-## Advantages over Node.js Version
-
-1. **No Rate Limiting**: Python version doesn't need the rate limiter
-2. **Better Data Format**: Parquet is more efficient than JSON in Firestore
-3. **Analytics Ready**: Direct Pandas/Arrow compatibility
-4. **Type Safety**: Full type hints for better development
-5. **Simpler Architecture**: No Firebase complexity
-6. **Better Error Handling**: More robust retry logic
-7. **Progress Tracking**: Built-in resume capability
-
-## Migration from Node.js
-
-The Python version maintains the same core functionality:
-
-- ✅ Reads same CSV validator files
-- ✅ Uses same Beaconcha.in API endpoints
-- ✅ Processes withdrawals and proposals with MEV data
-- ✅ Handles validator metadata (type, node, minipool)
-- ✅ Supports continuous monitoring and backfilling
-- ✅ Maintains epoch-based processing
-
-**Key Differences:**
-- Output: Parquet files instead of Firebase documents
-- No rate limiting needed
-- Better performance and reliability
-- Analytics-ready format
 
 ## Troubleshooting
 

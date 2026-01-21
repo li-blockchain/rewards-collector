@@ -3,7 +3,7 @@
 Ethereum Validator Rewards Monitor
 
 Continuous monitoring script that checks for new epochs and collects rewards.
-Similar to the Node.js index.js but using Python and parquet output.
+Saves rewards data to efficient Parquet files for analytics.
 """
 
 import os

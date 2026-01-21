@@ -4,61 +4,76 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Validator Performance Aggregator (aka rewards-collector) that extracts Ethereum validator rewards using the Beaconcha.in API. The system monitors validators every 100 epochs and captures consensus layer withdrawals and execution layer block proposal rewards. It consists of both Node.js monitoring scripts and Python invoicing/reporting components.
+This is a Validator Performance Aggregator (aka rewards-collector) that extracts Ethereum validator rewards using the Beaconcha.in API. The system monitors validators every 100 epochs and captures consensus layer withdrawals and execution layer block proposal rewards.
 
 ## Architecture
 
 **Core Components:**
-- `index.js` - Main continuous monitoring daemon that checks for new epochs every minute
-- `backfiller.js` - Historical data collection with Discord webhook integration  
-- `selectiveRun.js` - One-time epoch processing script
-- `lib/rewardExtractor.js` - Core API interface to Beaconcha.in for fetching validator data
-- `lib/rewardSave.js` - Firebase Firestore database operations
-- `invoicing/invoice.py` - Python-based reward calculation and invoice generation
+- `invoicing/rewards_collector.py` - Single epoch rewards collection with Parquet output
+- `invoicing/rewards_monitor.py` - Continuous monitoring daemon
+- `invoicing/rewards_backfiller.py` - Historical data backfilling with Discord notifications
+- `invoicing/bot.py` - Discord bot for queries and notifications
+- `invoicing/cdp_monitor.py` - CDP position monitoring with alerts
+- `invoicing/invoice.py` - Invoice generation with LEB adjustments
+- `invoicing/generate_invoice.py` - Invoice export to Excel
 
 **Data Flow:**
 1. Validator indices read from CSV files in `data/` directory
 2. Beaconcha.in API calls made in chunks of 100 validators
-3. Rewards data saved to Firebase Firestore collections
-4. Python scripts process stored data for invoicing with LEB (Liquid Ethereum Bonds) adjustments
+3. Rewards data saved to Parquet files for efficient analytics
+4. Invoice scripts process stored data with LEB (Liquid Ethereum Bonds) adjustments
 
 ## Development Commands
 
-**Node.js:**
-- `npm start` - Run main monitoring daemon with nodemon
-- `node index.js` - Direct execution of main monitor
-- `node selectiveRun.js <epoch_number>` - Process specific epoch
-- `node backfiller.js` - Run historical backfilling
-- `./run_backfiller.sh` - Production backfiller script (sets environment and runs backfiller + rplNodeUpdater)
+```bash
+# Install dependencies
+cd invoicing
+pip install -r requirements.txt
 
-**Python (invoicing):**
-- `cd invoicing && python invoice.py` - Generate invoices from collected data
-- Uses virtual environment at `invoicing/venv/`
-- Requirements in `invoicing/requirements.txt`
+# Single epoch collection
+python rewards_collector.py 390000
+
+# Continuous monitoring
+python rewards_monitor.py
+
+# Historical backfilling
+python rewards_backfiller.py
+
+# Run Discord bot
+python bot.py
+
+# Generate invoice
+python invoice.py
+```
 
 ## Environment Configuration
 
 Copy `.env.dist` to `.env` and configure:
 - `API_KEY` - Beaconcha.in API key (required)
+- `DISCORD_BOT_TOKEN` - Discord bot token
+- `DISCORD_WEBHOOK_URL` - For webhook notifications
+- `RPC_URL` - Ethereum RPC endpoint
 - `EPOCH_START` - Starting epoch for monitoring
-- `EPOCH_INTERVAL` - Epochs between checks (default: 100)  
-- `DEBUG` - Enable verbose logging
-- `DISCORD_KEY` & `DISCORD_CHANNEL` - For Discord notifications
-- `CLIENT_URL` - Ethereum client endpoint
-- `REWARD_COLLECTION` - Firebase collection name
+- `EPOCH_INTERVAL` - Epochs between checks (default: 100)
+- `CDP_POSITION_ADDRESS` - CDP position to monitor
+- `OPENAI_API_KEY` - For AI features
 
 ## Validator Data Format
 
 Validator CSV files in `data/` directory require format:
 `Index,Pubkey,Type,Node,Minipool address`
 
-The system primarily uses the validator index. The Type field is used in Python invoicing for LEB (Liquid Ethereum Bond) reward adjustments:
+The system primarily uses the validator index. The Type field is used for LEB (Liquid Ethereum Bond) reward adjustments:
 - Type 8-14: LEB8 (14% commission on borrowed portion)
 - Type 16: LEB16 (15% commission on borrowed portion)
 
-## Firebase Integration
+## Output Format
 
-Uses Firebase Admin SDK with service account key (`serviceAccountKey.json`). Data structure:
-- Each epoch stored as document with epoch number as document ID
-- Contains `withdrawals`, `proposals`, and `mev_data` arrays
-- Documents grouped by 100-epoch intervals for Python processing
+Rewards are stored in Parquet files (`rewards_{epoch}.parquet`) with schema:
+- `record_type`: "withdrawal" or "proposal"
+- `validator_index`: Validator index number
+- `amount`: Reward amount in ETH
+- `epoch`: Epoch number
+- `datetime`: Unix timestamp
+- `validator_type`, `node`, `minipool`: Validator metadata
+- `mev_source`, `exec_block_number`: Proposal-specific data
