@@ -194,6 +194,82 @@ class BeaconchainAPI:
             logger.error(f"Error fetching latest epoch: {e}")
             return 0
 
+    def get_validator_statuses(self, validator_indices: List[str], client_url: str = "http://libc-prod2:5052") -> Dict[str, str]:
+        """
+        Get validator statuses from beacon node RPC.
+
+        Queries the beacon node to determine validator status (active, exited, etc.)
+        Used to identify exit withdrawals vs regular reward withdrawals.
+
+        Args:
+            validator_indices: List of validator index strings to query
+            client_url: Beacon node RPC URL
+
+        Returns:
+            Dict mapping validator index (str) to status string.
+            Status values include: 'pending_initialized', 'pending_queued',
+            'active_ongoing', 'active_exiting', 'active_slashed',
+            'exited_unslashed', 'exited_slashed', 'withdrawal_possible',
+            'withdrawal_done'
+        """
+        if not validator_indices:
+            return {}
+
+        statuses = {}
+
+        # Beacon API supports POST with list of validator IDs for batch queries
+        url = f"{client_url}/eth/v1/beacon/states/head/validators"
+
+        try:
+            # Use POST with ids in request body for efficient batch query
+            response = requests.post(
+                url,
+                headers={'Accept': 'application/json', 'Content-Type': 'application/json'},
+                json={'ids': validator_indices}
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get('data'):
+                for validator in data['data']:
+                    index = str(validator['index'])
+                    status = validator['status']
+                    statuses[index] = status
+
+            logger.info(f"📊 Fetched status for {len(statuses)} validators from beacon node")
+
+            # Log summary of statuses found
+            status_counts = {}
+            for status in statuses.values():
+                status_counts[status] = status_counts.get(status, 0) + 1
+            if status_counts:
+                logger.debug(f"   Status breakdown: {status_counts}")
+
+            return statuses
+
+        except requests.RequestException as e:
+            logger.error(f"Error fetching validator statuses: {e}")
+            # Return empty dict on error - caller should handle gracefully
+            return {}
+
+    def is_validator_exited(self, status: str) -> bool:
+        """
+        Check if a validator status indicates the validator has exited.
+
+        Args:
+            status: Validator status string from beacon API
+
+        Returns:
+            True if validator has exited (withdrawal is principal, not just rewards)
+        """
+        exited_statuses = {
+            'exited_unslashed',
+            'exited_slashed',
+            'withdrawal_possible',
+            'withdrawal_done'
+        }
+        return status in exited_statuses
+
 
 class RewardProcessor:
     """Processes raw API data into clean, flattened structures."""
@@ -202,10 +278,21 @@ class RewardProcessor:
         self.validator_reader = validator_reader
         self.api = api
 
-    async def process_withdrawals(self, withdrawals_data: Dict[str, Any], epoch: int) -> List[Dict[str, Any]]:
-        """Process withdrawal data into flattened records."""
+    async def process_withdrawals(self, withdrawals_data: Dict[str, Any], epoch: int,
+                                   validator_statuses: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+        """Process withdrawal data into flattened records.
+
+        Args:
+            withdrawals_data: Raw withdrawal data from Beaconcha.in API
+            epoch: The epoch number being processed
+            validator_statuses: Optional dict mapping validator index to status string.
+                               Used to flag exit withdrawals.
+        """
         if not withdrawals_data.get('data'):
             return []
+
+        if validator_statuses is None:
+            validator_statuses = {}
 
         # Get epoch slots for timestamp
         try:
@@ -219,8 +306,16 @@ class RewardProcessor:
             timestamp = None
 
         processed_withdrawals = []
+        exit_count = 0
         for withdrawal in withdrawals_data['data']:
-            validator_info = self.validator_reader.get_validator_by_index(str(withdrawal['validatorindex']))
+            validator_index = str(withdrawal['validatorindex'])
+            validator_info = self.validator_reader.get_validator_by_index(validator_index)
+
+            # Check if this withdrawal is from an exited validator
+            status = validator_statuses.get(validator_index, '')
+            is_exit = self.api.is_validator_exited(status)
+            if is_exit:
+                exit_count += 1
 
             record = {
                 'record_type': 'withdrawal',
@@ -233,9 +328,14 @@ class RewardProcessor:
                 'minipool': validator_info['minipool'] if validator_info else '',
                 # Proposal-specific fields (null for withdrawals)
                 'mev_source': None,
-                'exec_block_number': None
+                'exec_block_number': None,
+                # Exit flag for proper reward calculation
+                'is_exit': is_exit
             }
             processed_withdrawals.append(record)
+
+        if exit_count > 0:
+            logger.info(f"🚪 Found {exit_count} exit withdrawals in epoch {epoch}")
 
         return processed_withdrawals
 
@@ -281,7 +381,9 @@ class RewardProcessor:
                     'minipool': validator_info['minipool'] if validator_info else '',
                     # Proposal-specific fields
                     'mev_source': mev_source,
-                    'exec_block_number': proposal['exec_block_number']
+                    'exec_block_number': proposal['exec_block_number'],
+                    # Proposals are never exits
+                    'is_exit': False
                 }
                 processed_proposals.append(record)
 
@@ -325,7 +427,8 @@ class ParquetWriter:
             'node',
             'minipool',
             'mev_source',
-            'exec_block_number'
+            'exec_block_number',
+            'is_exit'
         ]
 
         # Reorder columns and fill any missing ones with None
@@ -405,9 +508,14 @@ class RewardsCollector:
             logger.info(f"\n📦 Processing chunk {i}/{len(validator_chunks)} ({len(chunk)} validators)")
 
             try:
+                # Get validator statuses to identify exits
+                validator_statuses = self.api.get_validator_statuses(chunk)
+
                 # Get withdrawals for this chunk
                 withdrawals_data = self.api.get_withdrawals(chunk, epoch)
-                processed_withdrawals = await self.processor.process_withdrawals(withdrawals_data, epoch)
+                processed_withdrawals = await self.processor.process_withdrawals(
+                    withdrawals_data, epoch, validator_statuses
+                )
                 all_withdrawals.extend(processed_withdrawals)
 
                 # Get proposals for this chunk

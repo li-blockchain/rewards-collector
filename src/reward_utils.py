@@ -39,6 +39,39 @@ def adjust_reward(amount, validator_type):
     return amount
 
 
+def get_bonded_principal(amount, validator_type):
+    """
+    Get the bonded principal portion for a validator exit.
+
+    For LEB validators, only a portion of the 32 ETH is the operator's bond:
+    - LEB8 (8-14 ETH): 25% bonded (8 ETH of 32 ETH)
+    - LEB16 (16 ETH): 50% bonded (16 ETH of 32 ETH)
+    - Standard (32 ETH): 100% bonded
+
+    Parameters:
+    amount (float): The exit withdrawal amount.
+    validator_type (float): The type of validator.
+
+    Returns:
+    int: The bonded principal amount.
+    """
+    try:
+        validator_type = int(float(validator_type))
+    except (ValueError, TypeError):
+        return amount
+
+    # LEB8: 25% bonded
+    if 8 <= validator_type < 15:
+        return amount // 4
+
+    # LEB16: 50% bonded
+    if 16 <= validator_type < 17:
+        return amount // 2
+
+    # Standard: 100% bonded
+    return amount
+
+
 def get_validator_type_label(validator_type):
     """
     Convert validator type to ETH amount label (8, 16, or 32 ETH).

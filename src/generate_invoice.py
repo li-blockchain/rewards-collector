@@ -21,7 +21,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.chart import LineChart, Reference
 import tempfile
 import os
-from reward_utils import adjust_reward, get_validator_type_label
+from reward_utils import adjust_reward, get_validator_type_label, get_bonded_principal
 
 
 class InvoiceGenerator:
@@ -71,41 +71,109 @@ class InvoiceGenerator:
         return df_filtered
 
     def calculate_earnings(self, df):
-        """Calculate total earnings and breakdown."""
-        # Convert amounts to ETH
+        """Calculate total earnings and breakdown, separating exits from earnings."""
         df_calc = df.copy()
 
-        # Apply reward adjustments for LEB validators BEFORE converting to ETH
-        df_calc['amount_adjusted'] = df_calc.apply(
-            lambda row: adjust_reward(row['amount'], row['validator_type']),
-            axis=1
-        )
+        # Check if is_exit column exists
+        has_exit_flag = 'is_exit' in df_calc.columns
+        # Minimum threshold to consider a withdrawal as an exit (8 ETH in gwei - minimum LEB bond)
+        exit_threshold_gwei = 8 * 10**9
 
-        # Convert gwei to ETH for withdrawals, wei to ETH for proposals
-        df_calc.loc[df_calc['record_type'] == 'withdrawal', 'amount_eth'] = df_calc['amount_adjusted'] / 10**9
-        df_calc.loc[df_calc['record_type'] == 'proposal', 'amount_eth'] = df_calc['amount_adjusted'] / 10**18
+        # Separate exits from regular withdrawals
+        # Exit must have is_exit=True AND be above the threshold (to filter out small skimmed rewards)
+        principal_cap_gwei = 32 * 10**9
 
-        # Calculate totals
-        total_withdrawals = df_calc[df_calc['record_type'] == 'withdrawal']['amount_eth'].sum()
-        total_proposals = df_calc[df_calc['record_type'] == 'proposal']['amount_eth'].sum()
+        if has_exit_flag:
+            exit_mask = (
+                (df_calc['record_type'] == 'withdrawal') &
+                (df_calc['is_exit'] == True) &
+                (df_calc['amount'] >= exit_threshold_gwei)
+            )
+            exits_df = df_calc[exit_mask].copy()
+            withdrawals_df = df_calc[
+                (df_calc['record_type'] == 'withdrawal') & ~exit_mask
+            ].copy()
+
+            # Handle excess above 32 ETH - split into principal (exit) and excess (withdrawal)
+            # This matches invoice.py behavior
+            excess_records = []
+            for idx, row in exits_df.iterrows():
+                if row['amount'] > principal_cap_gwei:
+                    excess = row['amount'] - principal_cap_gwei
+                    # Add excess as a withdrawal record
+                    excess_record = row.copy()
+                    excess_record['amount'] = excess
+                    excess_records.append(excess_record)
+                    # Cap the exit at 32 ETH
+                    exits_df.at[idx, 'amount'] = principal_cap_gwei
+
+            if excess_records:
+                excess_df = pd.DataFrame(excess_records)
+                withdrawals_df = pd.concat([withdrawals_df, excess_df], ignore_index=True)
+        else:
+            # Fallback for old data without is_exit flag
+            exits_df = df_calc[(df_calc['record_type'] == 'withdrawal') & (df_calc['amount'] > principal_cap_gwei)].copy()
+            withdrawals_df = df_calc[(df_calc['record_type'] == 'withdrawal') & (df_calc['amount'] <= principal_cap_gwei)].copy()
+
+        proposals_df = df_calc[df_calc['record_type'] == 'proposal'].copy()
+
+        # Apply reward adjustments for regular withdrawals and proposals
+        if not withdrawals_df.empty:
+            withdrawals_df['amount_adjusted'] = withdrawals_df.apply(
+                lambda row: adjust_reward(row['amount'], row['validator_type']), axis=1
+            )
+            withdrawals_df['amount_eth'] = withdrawals_df['amount_adjusted'] / 10**9
+            total_withdrawals = withdrawals_df['amount_eth'].sum()
+        else:
+            total_withdrawals = 0
+
+        if not proposals_df.empty:
+            proposals_df['amount_adjusted'] = proposals_df.apply(
+                lambda row: adjust_reward(row['amount'], row['validator_type']), axis=1
+            )
+            proposals_df['amount_eth'] = proposals_df['amount_adjusted'] / 10**18
+            total_proposals = proposals_df['amount_eth'].sum()
+        else:
+            total_proposals = 0
+
+        # Calculate bonded principal for exits (not earnings)
+        if not exits_df.empty:
+            exits_df['amount_adjusted'] = exits_df.apply(
+                lambda row: get_bonded_principal(row['amount'], row['validator_type']), axis=1
+            )
+            exits_df['amount_eth'] = exits_df['amount_adjusted'] / 10**9
+            total_exits = exits_df['amount_eth'].sum()
+            exit_count = len(exits_df)
+        else:
+            total_exits = 0
+            exit_count = 0
+
+        # Grand total excludes exits (exits are principal returns, not earnings)
         grand_total = total_withdrawals + total_proposals
 
         # Count validators
         total_validators = df_calc['validator_index'].nunique()
 
-        # Breakdown by node
-        node_breakdown = df_calc.groupby(['node', 'record_type']).agg({
-            'amount_eth': 'sum',
-            'validator_index': 'nunique'
-        }).reset_index()
+        # Rebuild df_calc for node breakdown (excluding exits from earnings breakdown)
+        earnings_df = pd.concat([withdrawals_df, proposals_df]) if not withdrawals_df.empty or not proposals_df.empty else pd.DataFrame()
+
+        if not earnings_df.empty:
+            node_breakdown = earnings_df.groupby(['node', 'record_type']).agg({
+                'amount_eth': 'sum',
+                'validator_index': 'nunique'
+            }).reset_index()
+        else:
+            node_breakdown = pd.DataFrame(columns=['node', 'record_type', 'amount_eth', 'validator_index'])
 
         return {
             'total_withdrawals': total_withdrawals,
             'total_proposals': total_proposals,
+            'total_exits': total_exits,
+            'exit_count': exit_count,
             'grand_total': grand_total,
             'total_validators': total_validators,
             'node_breakdown': node_breakdown,
-            'record_count': len(df_calc)
+            'record_count': len(df_calc) - exit_count  # Exclude exits from record count
         }
 
     def calculate_rate_of_return(self, df, total_earnings, epoch_duration):
@@ -293,6 +361,12 @@ class InvoiceGenerator:
             ('Proposals', f"{earnings['total_proposals']:.6f} ETH", '', 'Annualized Rate', f"{roi['annualized_rate']:.4f}%"),
         ]
 
+        # Add exits row if there are any
+        if earnings.get('total_exits', 0) > 0:
+            performance_data.append(
+                ('', '', '', 'Principal Returned (exits)', f"{earnings['total_exits']:.6f} ETH")
+            )
+
         for row_data in performance_data:
             for i, value in enumerate(row_data, 1):
                 cell = ws.cell(row=current_row, column=i, value=value)
@@ -368,14 +442,35 @@ class InvoiceGenerator:
 
         # Add detail rows
         df_sorted = df.sort_values(['epoch', 'record_type', 'validator_index'])
-        for idx, row in enumerate(df_sorted.itertuples(), 2):
-            # Apply reward adjustment for LEB validators
-            amount_adjusted = adjust_reward(row.amount, row.validator_type if hasattr(row, 'validator_type') else None)
+        has_exit_flag = 'is_exit' in df.columns
+        # Minimum threshold to consider a withdrawal as an exit (8 ETH in gwei - minimum LEB bond)
+        exit_threshold_gwei = 8 * 10**9
 
-            # Convert amount to ETH based on type
-            if row.record_type == 'withdrawal':
+        for idx, row in enumerate(df_sorted.itertuples(), 2):
+            # Check if this is an exit (must have is_exit flag AND be above threshold)
+            is_exit = False
+            if row.record_type == 'withdrawal' and row.amount >= exit_threshold_gwei:
+                if has_exit_flag and hasattr(row, 'is_exit'):
+                    is_exit = row.is_exit == True
+                elif row.amount > 32 * 10**9:
+                    # Fallback for old data without is_exit flag
+                    is_exit = True
+
+            # Determine record type label and amount calculation
+            if is_exit:
+                # Exit: show bonded principal only, label as "Exit"
+                record_type_label = "Exit"
+                amount_adjusted = get_bonded_principal(row.amount, row.validator_type if hasattr(row, 'validator_type') else None)
                 amount_eth = amount_adjusted / 10**9
-            else:  # proposal
+            elif row.record_type == 'withdrawal':
+                # Regular withdrawal: apply LEB adjustment
+                record_type_label = "Withdrawal"
+                amount_adjusted = adjust_reward(row.amount, row.validator_type if hasattr(row, 'validator_type') else None)
+                amount_eth = amount_adjusted / 10**9
+            else:
+                # Proposal: apply LEB adjustment
+                record_type_label = "Proposal"
+                amount_adjusted = adjust_reward(row.amount, row.validator_type if hasattr(row, 'validator_type') else None)
                 amount_eth = amount_adjusted / 10**18
 
             # Get datetime if available and format it
@@ -404,7 +499,7 @@ class InvoiceGenerator:
                 row.epoch,
                 row.validator_index,
                 row.node,
-                row.record_type.title(),
+                record_type_label,
                 f"{amount_eth:.6f}",
                 validator_type_eth,
                 datetime_str
@@ -422,6 +517,8 @@ class InvoiceGenerator:
 
         print(f"✅ Professional invoice generated: {output_file}")
         print(f"   📊 Total Earnings: {earnings['grand_total']:.6f} ETH")
+        if earnings.get('total_exits', 0) > 0:
+            print(f"   💰 Principal Returned (exits): {earnings['total_exits']:.6f} ETH")
         print(f"   📈 Rate of Return: {roi['rate_of_return']:.4f}%")
         print(f"   📅 Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
 
