@@ -157,7 +157,10 @@ async def on_message(message):
 
                 # Convert date strings to datetime objects in UTC
                 from_datetime = datetime.datetime.strptime(from_date, "%m/%d/%Y").replace(tzinfo=datetime.timezone.utc)
-                to_datetime = datetime.datetime.strptime(to_date, "%m/%d/%Y").replace(tzinfo=datetime.timezone.utc)
+                # Use end of day (23:59:59) for the 'To' date to include all epochs from that day
+                to_datetime = datetime.datetime.strptime(to_date, "%m/%d/%Y").replace(
+                    hour=23, minute=59, second=59, tzinfo=datetime.timezone.utc
+                )
 
                 # Convert datetime objects to Unix timestamps
                 from_timestamp = int(from_datetime.timestamp())
