@@ -1,0 +1,32 @@
+[Unit]
+Description=LIBC Validator Rewards Backfiller
+Documentation=https://github.com/libc/rewards-collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# User to run as (change to match your setup)
+User=libc
+Group=libc
+
+# Working directory and environment
+WorkingDirectory=/home/libc/rewards-collector/src
+EnvironmentFile=/home/libc/rewards-collector/src/.env
+
+# Use venv python directly - no activation needed
+ExecStart=/home/libc/rewards-collector/venv/bin/python rewards_backfiller.py
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rewards-backfiller
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/libc/rewards-collector
+
+[Install]
+WantedBy=multi-user.target

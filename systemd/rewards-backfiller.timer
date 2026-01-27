@@ -1,0 +1,16 @@
+[Unit]
+Description=Run LIBC Validator Rewards Backfiller daily at 6 AM
+Documentation=https://github.com/libc/rewards-collector
+
+[Timer]
+# Run at 6:00 AM local time every day
+OnCalendar=*-*-* 06:00:00
+
+# Run missed executions if system was off at scheduled time
+Persistent=true
+
+# Small random delay to avoid exact-second spikes (optional)
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
