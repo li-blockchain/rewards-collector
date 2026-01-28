@@ -15,6 +15,8 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
+
 from rewards_collector import RewardsCollector, BeaconchainAPI
 
 # Setup logging
@@ -32,32 +34,33 @@ class RewardsBackfiller:
         self.config = config
         self.collector = RewardsCollector(config)
         self.api = BeaconchainAPI(config['api_key'])
-        self.start_epoch = int(config.get('epoch_start', 0))
         self.epoch_interval = int(config.get('epoch_interval', 100))
         self.delay_seconds = int(config.get('backfill_delay', 15))
-        self.data_dir = Path(config.get('data_dir', './'))
-        self.last_epoch_file = self.data_dir / '.lastepoch'
+        self.output_dir = Path(config.get('output_dir', './rewards_data'))
+        self.parquet_file = self.output_dir / 'rewards_master.parquet'
+
+        # Fallback epoch only used when no parquet data exists
+        try:
+            self.fallback_epoch = int(config.get('epoch_start', 0))
+        except (ValueError, TypeError):
+            logger.warning(f"⚠️ Invalid EPOCH_START value, defaulting to 0")
+            self.fallback_epoch = 0
 
     def load_last_epoch(self) -> int:
-        """Load the last processed epoch from file."""
-        if self.last_epoch_file.exists():
+        """Load the last processed epoch from the parquet file."""
+        if self.parquet_file.exists():
             try:
-                last_epoch = int(self.last_epoch_file.read_text().strip())
-                logger.info(f"📖 Using .lastepoch file: {last_epoch}")
-                return last_epoch
-            except (ValueError, IOError) as e:
-                logger.error(f"❌ Error reading .lastepoch file: {e}")
+                df = pd.read_parquet(self.parquet_file, columns=['epoch'])
+                if not df.empty:
+                    last_epoch = int(df['epoch'].max())
+                    logger.info(f"📖 Last epoch from parquet: {last_epoch}")
+                    # Return next epoch to process
+                    return last_epoch + self.epoch_interval
+            except Exception as e:
+                logger.error(f"❌ Error reading parquet file: {e}")
 
-        logger.info(f"📝 No .lastepoch found, starting from configured epoch: {self.start_epoch}")
-        return self.start_epoch
-
-    def save_last_epoch(self, epoch: int):
-        """Save the last processed epoch to file."""
-        try:
-            self.last_epoch_file.write_text(str(epoch))
-            logger.info(f"💾 Saved last epoch: {epoch}")
-        except IOError as e:
-            logger.error(f"❌ Error saving .lastepoch file: {e}")
+        logger.info(f"📝 No parquet data found, starting from fallback epoch: {self.fallback_epoch}")
+        return self.fallback_epoch
 
     async def run(self):
         """Main backfilling loop."""
@@ -85,9 +88,7 @@ class RewardsBackfiller:
                 logger.info(f"📈 Current epoch: {current_epoch}")
 
                 if next_epoch > current_epoch and current_epoch > 0:
-                    # Backfill complete
-                    self.save_last_epoch(next_epoch - self.epoch_interval)
-
+                    # Backfill complete - parquet file is source of truth, no need to save state
                     duration = datetime.now() - start_time
                     logger.info(f"\n🎉 Backfill Complete on Epoch {next_epoch - self.epoch_interval}!")
                     logger.info(f"⏱️  Total time: {duration.total_seconds():.1f} seconds")
@@ -116,7 +117,6 @@ class RewardsBackfiller:
 
             except KeyboardInterrupt:
                 logger.info("\n👋 Backfill stopped by user")
-                self.save_last_epoch(next_epoch)
                 break
             except Exception as e:
                 logger.error(f"❌ Error in backfill loop: {e}")
@@ -164,8 +164,7 @@ def load_config():
         'api_key': api_key,
         'validator_csv': os.getenv('VALIDATOR_CSV', '../data/validators_updated.csv'),
         'output_dir': os.getenv('OUTPUT_DIR', './rewards_data'),
-        'data_dir': os.getenv('DATA_DIR', './'),
-        'epoch_start': os.getenv('EPOCH_START', '0'),
+        'epoch_start': os.getenv('EPOCH_START', '0'),  # Fallback only, parquet is source of truth
         'epoch_interval': os.getenv('EPOCH_INTERVAL', '100'),
         'backfill_delay': os.getenv('BACKFILL_DELAY', '15'),
     }
