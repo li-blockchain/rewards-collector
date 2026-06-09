@@ -23,6 +23,10 @@ import requests
 import pandas as pd
 from pathlib import Path
 
+from node_client import LighthouseClient, ExecutionClient
+from mev_relay_client import MEVRelayClient
+from data_sources import LocalNodeDataSource, BeaconchainDataSource
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -481,51 +485,120 @@ class ParquetWriter:
         logger.info(f"   📊 Total records in master file: {total_records}")
 
 
+def _as_bool(value, default: bool = False) -> bool:
+    """Parse a truthy config string."""
+    if value is None:
+        return default
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 class RewardsCollector:
-    """Main rewards collection orchestrator."""
+    """
+    Main rewards collection orchestrator.
+
+    Reads from a primary data source (local Lighthouse/Nethermind nodes by
+    default) and, when enabled, transparently falls back to the legacy
+    Beaconcha.in API if a local-node query fails - allowing a phased,
+    safety-netted migration.
+
+    Relevant config keys (all optional, sensible defaults):
+        data_source           'local' (default) or 'beaconchain'
+        beaconchain_fallback  fall back to Beaconcha.in on local failure (default: true)
+        beacon_node_url       Lighthouse beacon API (default: http://libc-prod2:5052)
+        execution_rpc_url     Nethermind JSON-RPC (default: RPC_URL / http://libc-prod2:8545)
+        api_key               Beaconcha.in API key (required only for beaconchain/fallback)
+    """
 
     def __init__(self, config: Dict[str, str]):
         self.config = config
         self.validator_reader = ValidatorReader(config['validator_csv'])
-        self.api = BeaconchainAPI(config['api_key'])
-        self.processor = RewardProcessor(self.validator_reader, self.api)
         self.writer = ParquetWriter(config['output_dir'])
 
+        self.data_source_name = config.get('data_source', 'local')
+        self.fallback_enabled = _as_bool(config.get('beaconchain_fallback', 'true'), True)
+        self.fallback_count = 0
+
+        # Beaconcha.in client/source - needed as primary source or as fallback.
+        api_key = config.get('api_key')
+        self.api = BeaconchainAPI(api_key) if api_key else None
+        self.beaconchain_source: Optional[BeaconchainDataSource] = None
+        if self.api is not None:
+            processor = RewardProcessor(self.validator_reader, self.api)
+            self.beaconchain_source = BeaconchainDataSource(
+                self.validator_reader, self.api, processor
+            )
+
+        # Local node data source (the migration target).
+        self.local_source: Optional[LocalNodeDataSource] = None
+        if self.data_source_name == 'local':
+            beacon_url = config.get('beacon_node_url', 'http://libc-prod2:5052')
+            exec_url = config.get('execution_rpc_url') or os.getenv('RPC_URL') \
+                or 'http://libc-prod2:8545'
+            self.local_source = LocalNodeDataSource(
+                self.validator_reader,
+                LighthouseClient(beacon_url),
+                ExecutionClient(exec_url),
+                MEVRelayClient(),
+            )
+
+        if self.data_source_name == 'local' and self.local_source is None:
+            raise ValueError("Local data source requested but could not be initialized")
+        if self.data_source_name == 'beaconchain' and self.beaconchain_source is None:
+            raise ValueError("Beaconchain data source requested but API_KEY is missing")
+
+    async def _maybe_await(self, value):
+        """Await coroutines from the (async) Beaconchain source; pass through sync results."""
+        if asyncio.iscoroutine(value):
+            return await value
+        return value
+
+    async def _collect_category(self, category: str, indices: List[str], epoch: int) -> List[Dict[str, Any]]:
+        """
+        Collect one record category ('withdrawals' or 'proposals') from the
+        primary source, falling back to Beaconcha.in on failure when enabled.
+        """
+        primary = self.local_source if self.data_source_name == 'local' else self.beaconchain_source
+        method = getattr(primary, f'collect_{category}')
+
+        try:
+            return await self._maybe_await(method(indices, epoch))
+        except Exception as e:
+            can_fallback = (
+                self.data_source_name == 'local'
+                and self.fallback_enabled
+                and self.beaconchain_source is not None
+            )
+            if not can_fallback:
+                raise
+            self.fallback_count += 1
+            logger.warning(
+                f"⚠️  Local node failed for {category} at epoch {epoch} ({e}); "
+                f"falling back to Beaconcha.in"
+            )
+            fb_method = getattr(self.beaconchain_source, f'collect_{category}')
+            return await self._maybe_await(fb_method(indices, epoch))
+
+    async def gather_records(self, epoch: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        Collect withdrawal and proposal records for an epoch *without* persisting.
+
+        Useful for dry-run comparison/validation (see backfill.py and the
+        migration comparison tests).
+        """
+        validators = self.validator_reader.load_validators()
+        indices = [v['index'] for v in validators]
+        withdrawals = await self._collect_category('withdrawals', indices, epoch)
+        proposals = await self._collect_category('proposals', indices, epoch)
+        return withdrawals, proposals
+
     async def collect_rewards(self, epoch: int) -> Tuple[int, int]:
-        """Collect rewards for a specific epoch across all validator chunks."""
+        """Collect rewards for a specific epoch from the configured source and persist."""
         logger.info(f"\n{'='*50}")
-        logger.info(f"🔍 Starting reward collection for epoch {epoch}")
+        logger.info(f"🔍 Starting reward collection for epoch {epoch} "
+                    f"(source: {self.data_source_name})")
         logger.info(f"{'='*50}")
 
-        validator_chunks = self.validator_reader.chunk_validators()
-        total_withdrawals = 0
-        total_proposals = 0
-
-        all_withdrawals = []
-        all_proposals = []
-
-        for i, chunk in enumerate(validator_chunks, 1):
-            logger.info(f"\n📦 Processing chunk {i}/{len(validator_chunks)} ({len(chunk)} validators)")
-
-            try:
-                # Get validator statuses to identify exits
-                validator_statuses = self.api.get_validator_statuses(chunk)
-
-                # Get withdrawals for this chunk
-                withdrawals_data = self.api.get_withdrawals(chunk, epoch)
-                processed_withdrawals = await self.processor.process_withdrawals(
-                    withdrawals_data, epoch, validator_statuses
-                )
-                all_withdrawals.extend(processed_withdrawals)
-
-                # Get proposals for this chunk
-                proposals_data = self.api.get_proposals(chunk, epoch)
-                processed_proposals = await self.processor.process_proposals(proposals_data, epoch)
-                all_proposals.extend(processed_proposals)
-
-            except Exception as e:
-                logger.error(f"Error processing chunk {i}: {e}")
-                continue
+        all_withdrawals, all_proposals = await self.gather_records(epoch)
 
         # Save all data to single parquet file
         self.writer.save_rewards(all_withdrawals, all_proposals, epoch)
@@ -533,7 +606,8 @@ class RewardsCollector:
         total_withdrawals = len(all_withdrawals)
         total_proposals = len(all_proposals)
 
-        logger.info(f"\n✅ Completed epoch {epoch}: {total_withdrawals} withdrawals, {total_proposals} proposals")
+        logger.info(f"\n✅ Completed epoch {epoch}: {total_withdrawals} withdrawals, "
+                    f"{total_proposals} proposals")
         return total_withdrawals, total_proposals
 
 
@@ -553,20 +627,29 @@ def main():
     parser.add_argument('--output', default='./rewards_data',
                        help='Output directory for parquet files')
     parser.add_argument('--api-key', help='Beaconcha.in API key (or use API_KEY env var)')
+    parser.add_argument('--source', choices=['local', 'beaconchain'],
+                       default=os.getenv('DATA_SOURCE', 'local'),
+                       help='Reward data source (default: local nodes)')
 
     args = parser.parse_args()
 
-    # Get API key from args or environment
     api_key = args.api_key or os.getenv('API_KEY')
-    if not api_key:
-        logger.error("API key required. Use --api-key or set API_KEY environment variable.")
+    # API key is only required for the Beaconcha.in source; the local source
+    # uses it only as an optional fallback.
+    if args.source == 'beaconchain' and not api_key:
+        logger.error("API key required for beaconchain source. "
+                     "Use --api-key or set API_KEY environment variable.")
         sys.exit(1)
 
     # Configuration
     config = {
         'validator_csv': args.csv,
         'output_dir': args.output,
-        'api_key': api_key
+        'api_key': api_key,
+        'data_source': args.source,
+        'beaconchain_fallback': os.getenv('BEACONCHAIN_FALLBACK', 'true'),
+        'beacon_node_url': os.getenv('BEACON_NODE_URL', 'http://libc-prod2:5052'),
+        'execution_rpc_url': os.getenv('EXECUTION_RPC_URL') or os.getenv('RPC_URL'),
     }
 
     # Create and run collector
