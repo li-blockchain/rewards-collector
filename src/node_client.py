@@ -21,10 +21,11 @@ data sources are directly comparable):
   * Proposal   ``amount``        -> Wei    (MEV relay value or EL producer reward)
 """
 
+import json
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Optional, Any
+from typing import Dict, Iterator, List, Optional, Any
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -96,6 +97,120 @@ class LighthouseClient:
         except (requests.RequestException, KeyError, ValueError) as e:
             logger.error(f"Error fetching finalized epoch: {e}")
             return 0
+
+    # ------------------------------------------------------------------
+    # Server-Sent Events (real-time finalization)
+    # ------------------------------------------------------------------
+    def subscribe_finalized_checkpoints(self, reconnect: bool = True,
+                                        max_backoff: float = 60.0,
+                                        read_timeout: Optional[float] = 600.0
+                                        ) -> Iterator[int]:
+        """
+        Yield the epoch (int) of each ``finalized_checkpoint`` SSE event.
+
+        Subscribes to the beacon node's event stream
+        (``GET /eth/v1/events?topics=finalized_checkpoint``) and yields the
+        newly-finalized epoch number every time an epoch finalizes (~every
+        6.4 min on mainnet). This is the real-time, push-based replacement for
+        polling :meth:`get_finalized_epoch`.
+
+        When ``reconnect`` is True (the default) the stream is transparently
+        re-established with exponential backoff after a dropped connection or
+        a clean server-side close, so the generator effectively never ends.
+        Set ``reconnect=False`` for a single connection attempt (tests, or a
+        caller that wants to own the retry loop).
+
+        ``read_timeout`` bounds the wait for stream *data*; set comfortably
+        above the ~6.4 min epoch cadence so a healthy-but-idle connection is
+        not torn down, while a genuinely dead one is eventually detected and
+        reconnected.
+        """
+        for event in self._stream_sse('finalized_checkpoint', reconnect=reconnect,
+                                      max_backoff=max_backoff, read_timeout=read_timeout):
+            epoch = event.get('epoch')
+            if epoch is None:
+                logger.warning(f"finalized_checkpoint event missing epoch: {event!r}")
+                continue
+            try:
+                yield int(epoch)
+            except (TypeError, ValueError):
+                logger.warning(f"Malformed epoch in finalized_checkpoint event: {event!r}")
+
+    def _stream_sse(self, topics: str, reconnect: bool, max_backoff: float,
+                    read_timeout: Optional[float]) -> Iterator[Dict[str, Any]]:
+        """
+        Connect to the beacon SSE endpoint and yield decoded ``data`` payloads.
+
+        Handles connection drops and clean closes by reconnecting with an
+        exponential backoff (reset to 1s after each successful connection).
+        A dedicated streaming session is used so the long-lived event
+        connection never contends with the pooled per-slot block fetches.
+        """
+        url = f"{self.base_url}/eth/v1/events"
+        params = {'topics': topics}
+        backoff = 1.0
+        while True:
+            try:
+                with self.session.get(
+                    url, params=params, stream=True,
+                    headers={'Accept': 'text/event-stream'},
+                    timeout=(self.timeout, read_timeout),
+                ) as resp:
+                    resp.raise_for_status()
+                    backoff = 1.0  # connected - reset backoff
+                    logger.info(f"📡 Subscribed to beacon SSE topics={topics}")
+                    for payload in self._iter_sse_data(resp):
+                        yield payload
+            except requests.RequestException as e:
+                if not reconnect:
+                    raise
+                logger.warning(f"Beacon SSE connection error ({e}); "
+                               f"reconnecting in {backoff:.0f}s")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
+                continue
+            # Server closed the stream without error.
+            if not reconnect:
+                return
+            logger.warning(f"Beacon SSE stream closed by server; "
+                           f"reconnecting in {backoff:.0f}s")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, max_backoff)
+
+    @staticmethod
+    def _iter_sse_data(response) -> Iterator[Dict[str, Any]]:
+        """
+        Parse an SSE response, yielding the JSON-decoded ``data`` of each event.
+
+        Implements the minimal Server-Sent Events framing the beacon node
+        emits: ``field: value`` lines, an event terminated by a blank line,
+        ``:``-prefixed comment/keep-alive lines ignored. Only the ``data``
+        field is decoded - the topic is implied by the subscription. A
+        lightweight inline parser is used deliberately to avoid adding an SSE
+        client dependency to a codebase that is otherwise plain ``requests``.
+        """
+        data_lines: List[str] = []
+        for raw in response.iter_lines(decode_unicode=True):
+            # iter_lines strips the trailing newline; keep-alive chunks may
+            # surface as None/empty.
+            line = '' if raw is None else raw.rstrip('\r')
+            if line == '':
+                if data_lines:
+                    payload = '\n'.join(data_lines)
+                    data_lines = []
+                    try:
+                        yield json.loads(payload)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Skipping non-JSON SSE payload: {payload!r}")
+                continue
+            if line.startswith(':'):
+                continue  # comment / keep-alive
+            field, _, value = line.partition(':')
+            if value.startswith(' '):
+                value = value[1:]  # SSE: a single leading space is stripped
+            if field == 'data':
+                data_lines.append(value)
+            # 'event', 'id', 'retry' fields are ignored - topic is implied.
 
     def get_block(self, slot: int) -> Optional[Dict[str, Any]]:
         """

@@ -1,0 +1,57 @@
+# LIBC Validator Rewards Continuous Monitor
+#
+# Long-running, event-driven service. Subscribes to the local beacon node's
+# finalized_checkpoint SSE stream and collects each epoch's rewards as it
+# finalizes. Unlike rewards-backfiller (a oneshot driven by a timer), this is
+# an always-on daemon - no timer unit.
+#
+# Installation (run as root):
+#   1. Edit the paths/User below to match your deployment.
+#   2. cp rewards-monitor.service /etc/systemd/system/
+#   3. systemctl daemon-reload
+#   4. systemctl enable --now rewards-monitor.service
+#
+# Operating:
+#   systemctl status rewards-monitor.service     # health / last log lines
+#   journalctl -u rewards-monitor.service -f     # follow live logs
+#   systemctl restart rewards-monitor.service    # picks up where it left off
+#                                                 # (state in OUTPUT_DIR/.monitor_state.json)
+
+[Unit]
+Description=LIBC Validator Rewards Continuous Monitor
+Documentation=https://github.com/libc/rewards-collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# User to run as (change to match your setup)
+User=libc
+Group=libc
+
+# Working directory and environment
+WorkingDirectory=/home/libc/rewards-collector/src
+EnvironmentFile=/home/libc/rewards-collector/src/.env
+
+# Use venv python directly - no activation needed
+ExecStart=/home/libc/rewards-collector/venv/bin/python rewards_continuous_monitor.py
+
+# Always-on: restart on crash, and give the process time to finish the
+# in-flight epoch on stop (the handler exits cleanly within this window).
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=90
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rewards-monitor
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/libc/rewards-collector
+
+[Install]
+WantedBy=multi-user.target

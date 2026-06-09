@@ -14,7 +14,8 @@ This is a Validator Performance Aggregator (aka rewards-collector) that extracts
 - `src/mev_relay_client.py` - `MEVRelayClient` for direct MEV-Boost relay attribution
 - `src/data_sources.py` - `LocalNodeDataSource` / `BeaconchainDataSource` (interchangeable reward sources)
 - `src/backfill.py` - `HistoricalBackfill`: re-derive history from local nodes + validate against existing parquet
-- `src/rewards_monitor.py` - Continuous monitoring daemon
+- `src/rewards_continuous_monitor.py` - `ContinuousRewardsMonitor`: event-driven monitoring via beacon SSE `finalized_checkpoint` (no API key, resumes from `.monitor_state.json`)
+- `src/rewards_monitor.py` - Legacy polling monitor (superseded by `rewards_continuous_monitor.py`; see `src/MIGRATION.md`)
 - `src/rewards_backfiller.py` - Historical data backfilling with Discord notifications
 - `src/bot.py` - Discord bot for queries and notifications
 - `src/cdp_monitor.py` - CDP position monitoring with alerts
