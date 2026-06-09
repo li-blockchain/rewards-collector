@@ -1,0 +1,17 @@
+# Run the LIBC CDP Position Monitor every 30 minutes
+# (replaces the old "*/30 * * * *" crontab entry).
+
+[Unit]
+Description=Run LIBC CDP Position Monitor every 30 minutes
+Documentation=https://github.com/libc/rewards-collector
+
+[Timer]
+# Every 30 minutes, on the hour and half-hour.
+OnCalendar=*:0/30
+# Run a missed execution if the machine was off at the scheduled time.
+Persistent=true
+# Small jitter to avoid exact-second spikes.
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

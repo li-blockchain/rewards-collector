@@ -1,0 +1,46 @@
+# LIBC Rewards Discord Bot
+#
+# Long-running Discord bot (bot.py) that answers reward/earnings queries from
+# the canonical rewards_master.parquet. Replaces the previous tmux-launched
+# process and guarantees a SINGLE instance (the old host ran two by accident).
+#
+# Installation (run as root):
+#   1. Edit paths/User below to match the deployment.
+#   2. cp rewards-bot.service /etc/systemd/system/
+#   3. systemctl daemon-reload && systemctl enable --now rewards-bot.service
+#
+# Operating:
+#   systemctl status rewards-bot.service
+#   journalctl -u rewards-bot.service -f
+
+[Unit]
+Description=LIBC Rewards Discord Bot
+Documentation=https://github.com/libc/rewards-collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=libc
+Group=libc
+
+# cwd must be src/ so bot.py finds rewards_data/rewards_master.parquet
+WorkingDirectory=/home/libc/rewards-collector/src
+EnvironmentFile=/home/libc/rewards-collector/src/.env
+
+ExecStart=/home/libc/rewards-collector/venv/bin/python bot.py
+
+Restart=on-failure
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rewards-bot
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/libc/rewards-collector
+
+[Install]
+WantedBy=multi-user.target

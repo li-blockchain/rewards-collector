@@ -1,0 +1,41 @@
+# LIBC CDP Position Monitor (oneshot, driven by cdp-monitor.timer)
+#
+# Checks the CDP position health and alerts via Discord. Runs src/
+# cdp_monitor_simple.py. Replaces the old (dead) crontab entry that pointed at
+# a non-existent invoicing/cdp_monitor_simple.py.
+#
+# Installation (run as root):
+#   1. Edit paths/User below to match the deployment.
+#   2. cp cdp-monitor.service cdp-monitor.timer /etc/systemd/system/
+#   3. systemctl daemon-reload && systemctl enable --now cdp-monitor.timer
+#
+# Run once manually:  systemctl start cdp-monitor.service
+# Logs:               journalctl -u cdp-monitor.service
+
+[Unit]
+Description=LIBC CDP Position Monitor
+Documentation=https://github.com/libc/rewards-collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=libc
+Group=libc
+
+WorkingDirectory=/home/libc/rewards-collector/src
+EnvironmentFile=/home/libc/rewards-collector/src/.env
+
+ExecStart=/home/libc/rewards-collector/venv/bin/python cdp_monitor_simple.py
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cdp-monitor
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/libc/rewards-collector
+
+[Install]
+WantedBy=multi-user.target
