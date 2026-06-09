@@ -64,3 +64,6 @@ node_modules/
 
 # Progress tracking
 .lastepoch
+
+# Python test cache
+.pytest_cache/
