@@ -37,7 +37,7 @@ async def on_message(message):
             "👋 Hey, I'm Clark — I track LIBC validator rewards and watch our CDP position. I work nights.\n\n"
             "**📊 Reward reports** (by epoch)\n"
             "`!earnings <fromEpoch> <toEpoch>` — Summary: proposals, withdrawals, principal returned from exits, plus a per-node breakdown\n"
-            "`!invoice <fromEpoch> <toEpoch>` — Generate a full Excel invoice for the range and post it here\n\n"
+            "`!invoice <fromEpoch> <toEpoch> [client]` — Branded PDF invoice (+ Excel detail) with USD totals & metrics\n\n"
             "**🏦 CDP**\n"
             "`!cdp` — Current CDP position health (collateralization ratio & health factor)\n\n"
             "**💬 Just ask — `!yo <question>`** (plain English)\n"
@@ -73,40 +73,42 @@ async def on_message(message):
 
     if message.content.startswith('!invoice'):
         try:
-            # Split the message content to get the command and parameters
+            # !invoice <fromEpoch> <toEpoch> [client] [rplAmount]
             parts = message.content.split()
-            if len(parts) != 3:
-                await message.channel.send("Please provide both fromEpoch and toEpoch. Usage: !invoice <fromEpoch> <toEpoch>")
+            if len(parts) < 3:
+                await message.channel.send("Usage: `!invoice <fromEpoch> <toEpoch> [client] [rplAmount]`")
                 return
 
             fromEpoch = int(parts[1])
             toEpoch = int(parts[2])
+            client_id = parts[3] if len(parts) > 3 else 'kevin'
+            rpl_amount = float(parts[4]) if len(parts) > 4 else None
 
-            await message.channel.send(f"📊 Generating professional invoice for epochs {fromEpoch} to {toEpoch}... this may take a moment.")
+            await message.channel.send(
+                f"🧾 Generating invoice (PDF + Excel) for **{client_id}**, epochs {fromEpoch}–{toEpoch}… this may take a moment.")
 
-            # Generate the invoice
-            output_file = f"invoices/invoice_epochs_{fromEpoch}_{toEpoch}.xlsx"
-            generator = InvoiceGenerator(parquet_file)
-            generator.create_professional_invoice(
-                output_file,
-                fromEpoch,
-                toEpoch,
-                client_name="Valued Client",
-                invoice_number=None
-            )
+            # Lazy import so the bot still starts if WeasyPrint libs are missing.
+            from pdf_invoice import PDFInvoiceGenerator
+            out = PDFInvoiceGenerator(parquet_file).generate(
+                client_id, fromEpoch, toEpoch, rpl_amount=rpl_amount)
 
-            # Upload the file to Discord
-            invoice_path = Path(output_file)
-            if invoice_path.exists():
+            model = out['model']
+            files = []
+            for path in (out['pdf'], out['xlsx']):
+                if Path(path).exists():
+                    files.append(discord.File(path))
+            if files:
                 await message.channel.send(
-                    f"✅ Invoice generated successfully!",
-                    file=discord.File(invoice_path)
-                )
+                    f"✅ Invoice **{model['meta']['invoice_number']}** — "
+                    f"Balance Due **${model['balance_due_usd']:,.2f}**",
+                    files=files)
             else:
-                await message.channel.send("❌ Failed to generate invoice file.")
+                await message.channel.send("❌ Failed to generate invoice files.")
 
+        except KeyError as e:
+            await message.channel.send(f"Unknown client: {e}")
         except ValueError:
-            await message.channel.send("Invalid epoch numbers. Please ensure fromEpoch and toEpoch are valid integers.")
+            await message.channel.send("Invalid arguments. Usage: `!invoice <fromEpoch> <toEpoch> [client] [rplAmount]`")
         except Exception as e:
             await message.channel.send(f"An error occurred while generating invoice: {str(e)}")
 
