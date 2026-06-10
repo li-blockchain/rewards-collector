@@ -225,6 +225,15 @@ def build_invoice(client_id: str, start_epoch: int, end_epoch: int,
                     fee_rate=client.fee_rate, usd_rate=eth_usd,
                 ))
 
+    # --- Lido stVault (REPORT-ONLY: metrics, never billed) ---
+    if include_onchain and client.stvault and client.stvault.get('dashboard'):
+        try:
+            from lido_vault import StVaultClient
+            sv = StVaultClient(rpc_url, client.stvault['dashboard'])
+            metrics['stvault'] = sv.get_period_report(start_ts, end_ts)
+        except Exception as e:
+            logger.warning(f"⚠️  stVault report unavailable ({e})")
+
     subtotal = sum(li.amount_usd for li in line_items)
     now = datetime.now(timezone.utc)
 
