@@ -79,13 +79,15 @@ class PDFInvoiceGenerator:
     def generate(self, client_id: str, start_epoch: int, end_epoch: int,
                  output_pdf: Optional[str] = None, output_xlsx: Optional[str] = None,
                  eth_price_override: Optional[float] = None,
-                 invoice_number: Optional[str] = None):
+                 invoice_number: Optional[str] = None,
+                 rpl_amount: Optional[float] = None):
         """Build the model once, emit both the PDF and the XLS."""
         model = build_invoice(
             client_id, start_epoch, end_epoch,
             parquet_file=self.parquet_file,
             eth_price_override=eth_price_override,
             invoice_number=invoice_number,
+            rpl_amount=rpl_amount,
         )
         num = model['meta']['invoice_number']
         output_pdf = output_pdf or f"invoices/{num}.pdf"
@@ -108,6 +110,7 @@ def main():
     ap.add_argument('--pdf', help='Output PDF path')
     ap.add_argument('--xlsx', help='Output XLSX path')
     ap.add_argument('--eth-price', type=float, help='Pin the ETH/USD rate')
+    ap.add_argument('--rpl', type=float, help='RPL earned in the period (billable)')
     ap.add_argument('--invoice-number', help='Invoice number (e.g. INV-000067)')
     args = ap.parse_args()
 
@@ -115,7 +118,8 @@ def main():
     gen.generate(args.client, args.start_epoch, args.end_epoch,
                  output_pdf=args.pdf, output_xlsx=args.xlsx,
                  eth_price_override=args.eth_price,
-                 invoice_number=args.invoice_number)
+                 invoice_number=args.invoice_number,
+                 rpl_amount=args.rpl)
 
 
 if __name__ == '__main__':

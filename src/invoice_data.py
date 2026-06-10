@@ -175,6 +175,7 @@ def build_invoice(client_id: str, start_epoch: int, end_epoch: int,
                   eth_price_override: Optional[float] = None,
                   invoice_number: Optional[str] = None,
                   rpc_url: Optional[str] = None,
+                  rpl_amount: Optional[float] = None,
                   include_onchain: bool = True,
                   config_path: Optional[Path] = None) -> Dict[str, Any]:
     """
@@ -233,6 +234,20 @@ def build_invoice(client_id: str, start_epoch: int, end_epoch: int,
             metrics['stvault'] = sv.get_period_report(start_ts, end_ts)
         except Exception as e:
             logger.warning(f"⚠️  stVault report unavailable ({e})")
+
+    # --- RPL rewards (billable; amount supplied manually) ---
+    from rpl_rewards import resolve_period_rpl
+    rpl = resolve_period_rpl(rpl_amount, client.rpl_period)
+    if rpl > 0:
+        rpl_usd = price_client.rpl_usd()
+        metrics['prices']['RPL_USD'] = rpl_usd
+        metrics['rpl'] = {'period_rpl': rpl, 'source': 'manual'}
+        line_items.append(_billable_line(
+            description='Quarterly RPL Rewards',
+            earned=rpl, token_symbol='RPL',
+            fee_rate=client.fee_rate, usd_rate=rpl_usd,
+            sub_detail=f"{rpl:.0f} RPL",
+        ))
 
     subtotal = sum(li.amount_usd for li in line_items)
     now = datetime.now(timezone.utc)

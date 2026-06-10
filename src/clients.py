@@ -48,6 +48,9 @@ class Client:
     csm_operator_ids: List[int] = field(default_factory=list)
     stvault: Optional[Dict[str, str]] = None
     rpl_node_addresses: List[str] = field(default_factory=list)
+    # Default RPL earned in a billing period (RPL is supplied manually; the
+    # invoice CLI/bot --rpl overrides this). None -> no RPL line unless provided.
+    rpl_period: Optional[float] = None
 
     @property
     def fee_pct(self) -> float:
@@ -92,6 +95,7 @@ def get_client(client_id: str, path: Path = CONFIG_PATH) -> Client:
         csm_operator_ids=[int(x) for x in c.get('csm_operator_ids', [])],
         stvault=c.get('stvault'),
         rpl_node_addresses=c.get('rpl_node_addresses', []),
+        rpl_period=(float(c['rpl_period']) if c.get('rpl_period') is not None else None),
     )
 
 
