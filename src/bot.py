@@ -33,7 +33,19 @@ async def on_message(message):
         return
     
     if message.content.startswith('!help'):
-        await message.channel.send("Hi! I'm Clark. I can help you aggregate earnings data and monitor CDP positions. I work nights.\n\n**Commands:**\n`!earnings <fromEpoch> <toEpoch>` - Get earnings summary\n`!invoice <fromEpoch> <toEpoch>` - Generate and download full invoice (Excel)\n`!cdp` - Check CDP position status")
+        await message.channel.send(
+            "👋 Hey, I'm Clark — I track LIBC validator rewards and watch our CDP position. I work nights.\n\n"
+            "**📊 Reward reports** (by epoch)\n"
+            "`!earnings <fromEpoch> <toEpoch>` — Summary: proposals, withdrawals, principal returned from exits, plus a per-node breakdown\n"
+            "`!invoice <fromEpoch> <toEpoch>` — Generate a full Excel invoice for the range and post it here\n\n"
+            "**🏦 CDP**\n"
+            "`!cdp` — Current CDP position health (collateralization ratio & health factor)\n\n"
+            "**💬 Just ask — `!yo <question>`** (plain English)\n"
+            "`!yo rewards from 05/01/2025 to 05/18/2025` — Earnings by date (I convert dates → epochs)\n"
+            "`!yo what Rocket Pool cycle are we in?` — Current cycle number + date range\n"
+            "`!yo which cycle was Dec 11 2024?` — Cycle for any past date\n\n"
+            "`!help` — Show this message"
+        )
 
     if message.content.startswith('!earnings'):
         try:
