@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700;800&display=swap');
+  @page {
+    size: Letter; margin: 0.7in 0.75in;
+    @bottom-center { content: "Long Island Blockchain"; color: #6b6b6b; font-size: 8pt; }
+    @bottom-right { content: counter(page) " / " counter(pages); color: #9aa0a6; font-size: 8pt; }
+  }
+
+  :root {
+    --ink: #2c2b2a; --muted: #6b6b6b; --line: #e3e6e9;
+    --brand: #1f9cd6; --brand-dark: #1565a3; --head: #2f3438;
+    --bg-soft: #f4f7f9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--ink); font-size: 10pt; line-height: 1.45; margin: 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .page-break { page-break-before: always; }
+
+  /* ---- header ---- */
+  .top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .logo { max-width: 2.4in; max-height: 1.0in; }
+  .doc-title { text-align: right; }
+  .doc-title h1 { font-size: 30pt; font-weight: 300; margin: 0; letter-spacing: 1px; }
+  .doc-num { color: var(--muted); font-weight: 600; font-size: 10pt; margin-top: 2px; }
+  .balance-tag { margin-top: 14px; }
+  .balance-tag .lbl { color: var(--muted); font-weight: 600; font-size: 9.5pt; }
+  .balance-tag .amt { font-size: 15pt; font-weight: 700; }
+
+  .issuer { margin-top: 26px; }
+  .issuer .name { font-weight: 700; font-size: 11pt; }
+  .issuer .addr { color: var(--muted); }
+
+  /* ---- meta + bill-to ---- */
+  .meta { margin-top: 22px; display: flex; justify-content: space-between; }
+  .bill-to .lbl { color: var(--muted); }
+  .bill-to .who { font-weight: 700; font-size: 11pt; }
+  .meta-table td { padding: 2px 0; }
+  .meta-table td.k { color: var(--muted); padding-right: 18px; }
+  .meta-table td.v { text-align: right; }
+
+  /* ---- line items ---- */
+  table.items { width: 100%; border-collapse: collapse; margin-top: 26px; }
+  table.items thead th {
+    background: var(--head); color: #fff; font-weight: 600; font-size: 9pt;
+    text-align: left; padding: 9px 10px;
+  }
+  table.items thead th.num, table.items thead th.r { text-align: right; }
+  table.items tbody td { padding: 11px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.items td.idx { color: var(--muted); width: 26px; }
+  table.items td.r { text-align: right; white-space: nowrap; }
+  .desc-main { font-weight: 600; }
+  .desc-sub { color: var(--muted); font-size: 9pt; }
+
+  .totals { margin-top: 8px; width: 100%; }
+  .totals td { padding: 7px 10px; }
+  .totals td.k { text-align: right; color: var(--muted); }
+  .totals td.v { text-align: right; width: 1.5in; white-space: nowrap; }
+  .totals tr.grand td { font-weight: 700; color: var(--ink); }
+  .totals tr.due td { background: var(--bg-soft); font-weight: 700; font-size: 11pt; }
+
+  .notes { margin-top: 34px; }
+  .notes h4 { margin: 0 0 4px; font-weight: 600; }
+  .notes p { margin: 0 0 14px; color: var(--muted); }
+
+  /* ---- metrics page ---- */
+  h2.section { font-size: 16pt; font-weight: 700; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  .kpis { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+  .kpi { flex: 1 1 1.6in; border: 1px solid var(--line); border-top: 3px solid var(--brand);
+         border-radius: 4px; padding: 10px 12px; }
+  .kpi .k { color: var(--muted); font-size: 8.5pt; text-transform: uppercase; letter-spacing: .4px; }
+  .kpi .v { font-size: 14pt; font-weight: 700; margin-top: 3px; }
+  h3.block { font-size: 11pt; font-weight: 700; margin: 18px 0 6px; color: var(--brand-dark);
+             break-after: avoid; }
+  table.grid { width: 100%; border-collapse: collapse; }
+  table.grid th, table.grid td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  table.grid th { color: var(--muted); font-weight: 600; font-size: 9pt; }
+  table.grid td.r, table.grid th.r { text-align: right; }
+  table.grid tr { break-inside: avoid; }
+  .kpi { break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ============ PAGE 1: INVOICE ============ -->
+<section class="invoice">
+  <div class="top">
+    <div>
+      {% if logo_data_uri %}<img class="logo" src="{{ logo_data_uri }}" alt="logo">{% endif %}
+    </div>
+    <div class="doc-title">
+      <h1>Invoice</h1>
+      <div class="doc-num"># {{ meta.invoice_number }}</div>
+      <div class="balance-tag">
+        <div class="lbl">Balance Due</div>
+        <div class="amt">${{ '{:,.2f}'.format(balance_due_usd) }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="issuer">
+    <div class="name">{{ company.name }}</div>
+    {% for line in company.address_lines %}<div class="addr">{{ line }}</div>{% endfor %}
+  </div>
+
+  <div class="meta">
+    <div class="bill-to">
+      <div class="lbl">Bill To</div>
+      <div class="who">{{ client.bill_to }}</div>
+      {% for line in client.bill_to_address_lines %}<div class="addr">{{ line }}</div>{% endfor %}
+    </div>
+    <table class="meta-table">
+      <tr><td class="k">Invoice Date :</td><td class="v">{{ meta.invoice_date }}</td></tr>
+      <tr><td class="k">Terms :</td><td class="v">{{ meta.terms }}</td></tr>
+      <tr><td class="k">Due Date :</td><td class="v">{{ meta.due_date }}</td></tr>
+      <tr><td class="k">Period :</td><td class="v">{{ period.start_date }} → {{ period.end_date }}</td></tr>
+    </table>
+  </div>
+
+  <table class="items">
+    <thead>
+      <tr>
+        <th class="num">#</th><th>Item &amp; Description</th>
+        <th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for li in line_items %}
+      <tr>
+        <td class="idx">{{ loop.index }}</td>
+        <td><div class="desc-main">{{ li.description }}</div>
+            <div class="desc-sub">{{ li.sub_detail }}</div></td>
+        <td class="r">{{ '{:,.5f}'.format(li.qty) }}</td>
+        <td class="r">{{ '{:,.2f}'.format(li.rate) }}</td>
+        <td class="r">{{ '{:,.2f}'.format(li.amount) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr><td class="k">Sub Total</td><td class="v">{{ '{:,.2f}'.format(subtotal_usd) }}</td></tr>
+    <tr class="grand"><td class="k">Total</td><td class="v">${{ '{:,.2f}'.format(total_usd) }}</td></tr>
+    <tr class="due"><td class="k">Balance Due</td><td class="v">${{ '{:,.2f}'.format(balance_due_usd) }}</td></tr>
+  </table>
+
+  <div class="notes">
+    <h4>Notes</h4><p>{{ company.notes }}</p>
+    <h4>Terms &amp; Conditions</h4><p>Service fee billed at {{ '%.1f'|format(client.fee_pct) }}% of net rewards. Payments processed through Gusto.</p>
+  </div>
+</section>
+
+<!-- ============ PAGE 2: METRICS ============ -->
+<section class="page-break">
+  <h2 class="section">Performance &amp; Reward Metrics</h2>
+  <p class="sub">{{ client.name }} · Epochs {{ '{:,}'.format(period.start_epoch) }}–{{ '{:,}'.format(period.end_epoch) }}
+     · {{ period.start_date }} → {{ period.end_date }} ({{ period.days }} days)</p>
+
+  <div class="kpis">
+    <div class="kpi"><div class="k">Net Rewards (ETH)</div><div class="v">{{ '%.4f'|format(metrics.rp_net_eth) }}</div></div>
+    <div class="kpi"><div class="k">Validators</div><div class="v">{{ metrics.validators }}</div></div>
+    <div class="kpi"><div class="k">Blocks Proposed</div><div class="v">{{ metrics.blocks_proposed }}</div></div>
+    <div class="kpi"><div class="k">Balance Due (USD)</div><div class="v">${{ '{:,.2f}'.format(balance_due_usd) }}</div></div>
+  </div>
+
+  <h3 class="block">Ethereum Node Rewards</h3>
+  <table class="grid">
+    <tr><td>Gross rewards (pre-commission)</td><td class="r">{{ '%.6f'|format(metrics.rp_gross_eth) }} ETH</td></tr>
+    <tr><td>Net rewards (after RP commission)</td><td class="r">{{ '%.6f'|format(metrics.rp_net_eth) }} ETH</td></tr>
+    <tr><td>— Withdrawals (consensus skim)</td><td class="r">{{ '%.6f'|format(metrics.rp_withdrawals_eth) }} ETH</td></tr>
+    <tr><td>— Block proposals (EL + MEV)</td><td class="r">{{ '%.6f'|format(metrics.rp_proposals_eth) }} ETH</td></tr>
+    <tr><td>Blocks proposed (MEV-relay / local)</td><td class="r">{{ metrics.blocks_proposed }} ({{ metrics.mev_blocks }} / {{ metrics.local_blocks }})</td></tr>
+    <tr><td>MEV value captured</td><td class="r">{{ '%.6f'|format(metrics.mev_value_eth) }} ETH</td></tr>
+    <tr><td>Withdrawal records</td><td class="r">{{ metrics.withdrawal_count }}</td></tr>
+    <tr><td>ETH price used</td><td class="r">${{ '{:,.2f}'.format(metrics.prices.ETH_USD) }}</td></tr>
+  </table>
+
+  {% if metrics.type_counts %}
+  <h3 class="block">Validator Mix</h3>
+  <table class="grid">
+    <tr><th>Type</th><th class="r">Count</th></tr>
+    {% for t, n in metrics.type_counts.items() %}
+    <tr><td>{{ t }}</td><td class="r">{{ n }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if metrics.node_breakdown %}
+  <h3 class="block">Per-Node Breakdown</h3>
+  <table class="grid">
+    <tr><th>Node</th><th>Type</th><th class="r">Amount (ETH)</th><th class="r">Validators</th></tr>
+    {% for r in metrics.node_breakdown %}
+    <tr><td>{{ r.node }}</td><td>{{ r.record_type|capitalize }}</td>
+        <td class="r">{{ '%.6f'|format(r.amount_eth) }}</td><td class="r">{{ r.validators }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if metrics.csm %}
+  <h3 class="block">Lido CSM (Operator {{ metrics.csm.operator_ids|join(', ') }})</h3>
+  <table class="grid">
+    <tr><td>CSM rewards this period</td><td class="r">{{ '%.6f'|format(metrics.csm.period_eth) }} ETH</td></tr>
+    <tr><td>Cumulative CSM rewards</td><td class="r">{{ '%.6f'|format(metrics.csm.cumulative_eth) }} ETH</td></tr>
+  </table>
+  {% endif %}
+
+  {% if metrics.stvault %}
+  <h3 class="block">Lido stVault (report-only — fees auto-collected)</h3>
+  <table class="grid">
+    <tr><td>Vault total value</td><td class="r">{{ '%.6f'|format(metrics.stvault.total_value_eth) }} ETH</td></tr>
+    <tr><td>Rewards this period</td><td class="r">{{ '%.6f'|format(metrics.stvault.period_rewards_eth) }} ETH</td></tr>
+    <tr><td>Node-operator fees collected</td><td class="r">{{ '%.6f'|format(metrics.stvault.fees_eth) }} ETH</td></tr>
+  </table>
+  {% endif %}
+
+  {% if metrics.rpl %}
+  <h3 class="block">RPL Rewards</h3>
+  <table class="grid">
+    <tr><td>RPL earned this period</td><td class="r">{{ '%.4f'|format(metrics.rpl.period_rpl) }} RPL</td></tr>
+    <tr><td>RPL price used</td><td class="r">${{ '{:,.2f}'.format(metrics.prices.RPL_USD) }}</td></tr>
+  </table>
+  {% endif %}
+</section>
+
+</body>
+</html>

@@ -58,8 +58,8 @@ class InvoiceGenerator:
             print(f"⚠️  Could not download logo: {e}")
             return False
 
-    def load_data(self, start_epoch, end_epoch):
-        """Load and filter parquet data."""
+    def load_data(self, start_epoch, end_epoch, node_ids=None):
+        """Load and filter parquet data (optionally to a client's node labels)."""
         if not Path(self.parquet_file).exists():
             raise FileNotFoundError(f"Parquet file not found: {self.parquet_file}")
 
@@ -67,6 +67,11 @@ class InvoiceGenerator:
 
         # Filter by epoch range
         df_filtered = df[(df['epoch'] >= start_epoch) & (df['epoch'] <= end_epoch)].copy()
+
+        # Optional per-client node filter (matches the parquet 'node' column).
+        if node_ids:
+            wanted = {str(n) for n in node_ids}
+            df_filtered = df_filtered[df_filtered['node'].astype(str).isin(wanted)].copy()
 
         return df_filtered
 
@@ -227,11 +232,12 @@ class InvoiceGenerator:
         return datetime.fromtimestamp(timestamp)
 
     def create_professional_invoice(self, output_file, start_epoch, end_epoch,
-                                  client_name="Valued Client", invoice_number=None):
-        """Create professionally formatted Excel invoice."""
+                                  client_name="Valued Client", invoice_number=None,
+                                  node_ids=None):
+        """Create professionally formatted Excel invoice (optionally per-client)."""
 
         # Load and calculate data
-        df = self.load_data(start_epoch, end_epoch)
+        df = self.load_data(start_epoch, end_epoch, node_ids=node_ids)
         earnings = self.calculate_earnings(df)
 
         # Calculate epoch duration in days
