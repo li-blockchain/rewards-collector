@@ -1,0 +1,42 @@
+# LIBC On-chain Reward Snapshot (oneshot, driven by onchain-snapshot.timer)
+#
+# Records cumulative on-chain reward values (Lido stVault totalValue + accrued
+# fee, Lido CSM cumulative rewards per operator) so invoice period accounting can
+# diff snapshots — libc-prod2 prunes historical state, so we can't read the past
+# directly.
+#
+# Installation (run as root):
+#   1. Edit paths/User below to match the deployment.
+#   2. cp onchain-snapshot.service onchain-snapshot.timer /etc/systemd/system/
+#   3. systemctl daemon-reload && systemctl enable --now onchain-snapshot.timer
+#
+# Run once now:  systemctl start onchain-snapshot.service
+# Logs:          journalctl -u onchain-snapshot.service
+
+[Unit]
+Description=LIBC On-chain Reward Snapshot
+Documentation=https://github.com/libc/rewards-collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=libc
+Group=libc
+
+WorkingDirectory=/home/libc/rewards-collector/src
+EnvironmentFile=/home/libc/rewards-collector/src/.env
+
+ExecStart=/home/libc/rewards-collector/venv/bin/python snapshots.py
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=onchain-snapshot
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/libc/rewards-collector
+
+[Install]
+WantedBy=multi-user.target

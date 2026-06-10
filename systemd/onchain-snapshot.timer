@@ -1,0 +1,14 @@
+# Record on-chain reward snapshots every 6 hours.
+# Frequent enough to bracket any billing period closely; light on the node.
+
+[Unit]
+Description=Run LIBC on-chain reward snapshot every 6 hours
+Documentation=https://github.com/libc/rewards-collector
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:05:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

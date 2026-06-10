@@ -231,7 +231,18 @@ def build_invoice(client_id: str, start_epoch: int, end_epoch: int,
         try:
             from lido_vault import StVaultClient
             sv = StVaultClient(rpc_url, client.stvault['dashboard'])
-            metrics['stvault'] = sv.get_period_report(start_ts, end_ts)
+            report = sv.get_period_report(start_ts, end_ts)
+            # Prefer the archive-free snapshot diff for period rewards when the
+            # collector has bracketing snapshots (libc-prod2 prunes old state).
+            try:
+                from snapshots import period_value, SNAPSHOT_FILE
+                snap = period_value(SNAPSHOT_FILE, 'vault_total_value',
+                                    client.stvault['dashboard'], start_ts, end_ts)
+                if snap is not None:
+                    report['period_rewards_eth'] = snap
+            except Exception:
+                pass
+            metrics['stvault'] = report
         except Exception as e:
             logger.warning(f"⚠️  stVault report unavailable ({e})")
 
