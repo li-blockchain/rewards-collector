@@ -1,0 +1,31 @@
+{
+  "company": {
+    "name": "Long Island Blockchain",
+    "address_lines": [
+      "5830 E. 2nd Street, Suite 8",
+      "Casper, WY Wyoming 82609",
+      "U.S.A"
+    ],
+    "logo_url": "https://libc.fi/libc-logo.png",
+    "notes": "Thanks for your business.",
+    "terms": "Due on Receipt"
+  },
+  "clients": {
+    "kevin": {
+      "name": "Kevin Thompson",
+      "bill_to": "Kevin Thompson",
+      "bill_to_address_lines": [],
+      "fee_rate": 0.05,
+      "rp_node_ids": ["1", "2", "3"],
+      "csm_operator_ids": [105],
+      "stvault": {
+        "vault": "0xd402937b3ff3c187f727c1146a9e846275e9f711",
+        "dashboard": "0x2bb82089511d3231be7bc52d3c79d06b21a2f13b"
+      },
+      "rpl_node_addresses": [
+        "0x84ba027280cC6cc1e592a01270c5f21A494F46Cb",
+        "0x665dd495742e25BFd5778E40d44A8C70303f7CEe"
+      ]
+    }
+  }
+}
