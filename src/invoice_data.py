@@ -26,6 +26,7 @@ with the gross/net earned amount shown as the line's sub-detail.
 """
 
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,6 +44,11 @@ logger = logging.getLogger(__name__)
 # Mainnet genesis for epoch->date (matches generate_invoice.epoch_to_date).
 GENESIS_TS = 1606824000
 SECONDS_PER_EPOCH = 384
+
+
+def _default_rpc_url() -> str:
+    return (os.getenv('EXECUTION_RPC_URL') or os.getenv('RPC_URL')
+            or 'http://libc-prod2:8545')
 
 
 def epoch_to_datetime(epoch: int) -> datetime:
@@ -149,25 +155,46 @@ def _rp_eth_stream(client: Client, parquet_file: str, start_epoch: int,
     }
 
 
+def _csm_stream(client: Client, start_ts: int, end_ts: int,
+                rpc_url: str) -> Optional[Dict[str, Any]]:
+    """CSM ETH rewards for the client's operator id(s) over the period (or None)."""
+    if not client.csm_operator_ids:
+        return None
+    try:
+        from lido_csm import CSMRewardsClient
+        csm = CSMRewardsClient(rpc_url)
+        return csm.get_period_rewards(client.csm_operator_ids, start_ts, end_ts)
+    except Exception as e:
+        logger.warning(f"⚠️  CSM rewards unavailable ({e}); skipping CSM line")
+        return None
+
+
 def build_invoice(client_id: str, start_epoch: int, end_epoch: int,
                   parquet_file: str = 'rewards_data/rewards_master.parquet',
                   price_client: Optional[PriceClient] = None,
                   eth_price_override: Optional[float] = None,
                   invoice_number: Optional[str] = None,
+                  rpc_url: Optional[str] = None,
+                  include_onchain: bool = True,
                   config_path: Optional[Path] = None) -> Dict[str, Any]:
     """
     Assemble the full invoice model for ``client_id`` over [start_epoch, end_epoch].
 
-    NOTE: this step wires the RP-ETH stream only; CSM, RPL (billable) and stVault
-    (report-only) are added in later build steps and slot into ``line_items`` /
-    ``metrics`` respectively.
+    Billable streams -> line items: RP-ETH (parquet), CSM-ETH (operator id),
+    and RPL (later). stVault is report-only (metrics). ``include_onchain=False``
+    skips chain reads (offline / tests).
     """
     company: Company = load_company(config_path) if config_path else load_company()
     client: Client = get_client(client_id, config_path) if config_path else get_client(client_id)
     price_client = price_client or PriceClient(
         overrides={'ETH': eth_price_override} if eth_price_override else None)
+    rpc_url = rpc_url or _default_rpc_url()
 
     eth_usd = price_client.eth_usd()
+
+    start_date = epoch_to_datetime(start_epoch)
+    end_date = epoch_to_datetime(end_epoch)
+    start_ts, end_ts = int(start_date.timestamp()), int(end_date.timestamp())
 
     metrics: Dict[str, Any] = {'prices': {'ETH_USD': eth_usd}}
     line_items: List[LineItem] = []
@@ -182,10 +209,24 @@ def build_invoice(client_id: str, start_epoch: int, end_epoch: int,
             fee_rate=client.fee_rate, usd_rate=eth_usd,
         ))
 
+    # --- Lido CSM ETH (billable) ---
+    if include_onchain:
+        csm = _csm_stream(client, start_ts, end_ts, rpc_url)
+        if csm is not None:
+            metrics['csm'] = {
+                'operator_ids': csm['operator_ids'],
+                'period_eth': csm['period_eth'],
+                'cumulative_eth': csm['cumulative_eth'],
+            }
+            if csm['period_eth'] > 0:
+                line_items.append(_billable_line(
+                    description='Lido CSM ETH Earnings',
+                    earned=csm['period_eth'], token_symbol='ETH',
+                    fee_rate=client.fee_rate, usd_rate=eth_usd,
+                ))
+
     subtotal = sum(li.amount_usd for li in line_items)
     now = datetime.now(timezone.utc)
-    start_date = epoch_to_datetime(start_epoch)
-    end_date = epoch_to_datetime(end_epoch)
 
     return {
         'meta': {
