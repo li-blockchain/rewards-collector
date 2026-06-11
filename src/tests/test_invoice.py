@@ -108,6 +108,41 @@ def test_billing_math(synthetic):
     assert inv['metrics']['mev_blocks'] == 1
 
 
+def test_vault_report_event_decode():
+    """A synthetic VaultReportApplied data payload decodes to the right fields."""
+    from eth_abi import encode, decode
+    from lido_vault import _REPORT_EVENT_TYPES
+    # (reportTimestamp, totalValue, inOutDelta, cumulativeLidoFees, liab, maxliab, slash)
+    values = [1780833611, 3780 * 10**18, 3706 * 10**18, 1562 * 10**15, 2831 * 10**18, 0, 0]
+    data = encode(_REPORT_EVENT_TYPES, values)
+    ts, tv, io, cfees, liab, maxliab, slash = decode(_REPORT_EVENT_TYPES, data)
+    assert ts == 1780833611
+    assert (tv - io) / 1e18 == pytest.approx(74.0)        # rewards = tv - io
+    assert cfees / 1e18 == pytest.approx(1.562)
+
+
+def test_vault_period_delta(monkeypatch):
+    """period rewards/fees = (last report in window) − (report before window)."""
+    from lido_vault import StVaultClient
+    sv = StVaultClient.__new__(StVaultClient)  # skip __init__/network
+    monkeypatch.setattr(sv, 'get_state', lambda: {
+        'total_value_eth': 3780.0, 'cumulative_rewards_eth': 73.6,
+        'lido_fees_cumulative_eth': 1.562, 'lido_fees_settled_eth': 1.388,
+        'fee_rates_bps': {'reserve_ratio': 500, 'infra': 0, 'liquidity': 650, 'reservation': 0},
+        'no_fee_rate_pct': 5.0, 'no_fee_accrued_eth': 0.48, 'last_report_ts': 0})
+    monkeypatch.setattr(sv, 'get_reports', lambda a, b: [
+        {'ts': 100, 'total_value_eth': 3778.0, 'inOutDelta': 0,
+         'rewards_eth': 70.0, 'cumulative_lido_fees_eth': 1.0},   # before period
+        {'ts': 200, 'total_value_eth': 3780.0, 'inOutDelta': 0,
+         'rewards_eth': 73.0, 'cumulative_lido_fees_eth': 1.2},   # within
+    ])
+    out = sv.get_period_report(150, 300)
+    assert out['reports_in_period'] == 1
+    assert out['period_rewards_eth'] == pytest.approx(3.0)        # 73 - 70
+    assert out['lido_fees_period_eth'] == pytest.approx(0.2)      # 1.2 - 1.0
+    assert out['report_only'] is True
+
+
 def test_no_onchain_means_no_csm_or_stvault(synthetic):
     pq, cfg = synthetic
     inv = invoice_data.build_invoice(

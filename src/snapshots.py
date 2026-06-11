@@ -66,10 +66,14 @@ class SnapshotCollector:
         for dash in vaults.values():
             try:
                 st = StVaultClient(self.rpc_url, dash).get_state()
-                rows.append({'ts': ts, 'block': block, 'metric': 'vault_total_value',
-                             'key': dash.lower(), 'value': st['total_value_eth']})
-                rows.append({'ts': ts, 'block': block, 'metric': 'vault_accrued_fee',
-                             'key': dash.lower(), 'value': st['accrued_fee_eth']})
+                for metric, value in (
+                    ('vault_total_value', st['total_value_eth']),
+                    ('vault_cumulative_rewards', st['cumulative_rewards_eth']),
+                    ('vault_cumulative_lido_fees', st['lido_fees_cumulative_eth']),
+                    ('vault_no_fee_accrued', st['no_fee_accrued_eth']),
+                ):
+                    rows.append({'ts': ts, 'block': block, 'metric': metric,
+                                 'key': dash.lower(), 'value': value})
             except Exception as e:
                 logger.warning(f"vault snapshot failed for {dash}: {e}")
 
