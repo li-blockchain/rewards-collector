@@ -203,33 +203,6 @@
   </table>
   {% endif %}
 
-  {% if metrics.csm %}
-  <h3 class="block">Lido CSM (Operator {{ metrics.csm.operator_ids|join(', ') }})</h3>
-  <table class="grid">
-    <tr><td>CSM rewards this period</td><td class="r">{{ '%.6f'|format(metrics.csm.period_eth) }} ETH</td></tr>
-    <tr><td>Cumulative CSM rewards</td><td class="r">{{ '%.6f'|format(metrics.csm.cumulative_eth) }} ETH</td></tr>
-  </table>
-  {% endif %}
-
-  {% if metrics.stvault %}
-  {% set sv = metrics.stvault %}
-  <h3 class="block">Lido stVault — Rewards (report-only)</h3>
-  <table class="grid">
-    <tr><td>Vault total value</td><td class="r">{{ '%.6f'|format(sv.total_value_eth) }} ETH</td></tr>
-    <tr><td>Rewards this period ({{ sv.reports_in_period }} oracle report{{ '' if sv.reports_in_period == 1 else 's' }})</td><td class="r">{{ '%.6f'|format(sv.period_rewards_eth) }} ETH</td></tr>
-    <tr><td>Cumulative rewards (to date)</td><td class="r">{{ '%.6f'|format(sv.cumulative_rewards_eth) }} ETH</td></tr>
-  </table>
-
-  <h3 class="block">Lido stVault — Fees (report-only)</h3>
-  <table class="grid">
-    <tr><td>Lido protocol fees this period</td><td class="r">{{ '%.6f'|format(sv.lido_fees_period_eth) }} ETH</td></tr>
-    <tr><td>Lido protocol fees incurred (cumulative)</td><td class="r">{{ '%.6f'|format(sv.lido_fees_cumulative_eth) }} ETH</td></tr>
-    <tr><td>— settled to Lido treasury</td><td class="r">{{ '%.6f'|format(sv.lido_fees_settled_eth) }} ETH</td></tr>
-    <tr><td>Lido fee rates (infra / liquidity / reservation)</td><td class="r">{{ '%.2f'|format(sv.fee_rates_bps.infra/100) }}% / {{ '%.2f'|format(sv.fee_rates_bps.liquidity/100) }}% / {{ '%.2f'|format(sv.fee_rates_bps.reservation/100) }}%</td></tr>
-    <tr><td>LIBC node-operator fee (auto-collected)</td><td class="r">{{ '%.1f'|format(sv.no_fee_rate_pct) }}% · accrued {{ '%.4f'|format(sv.no_fee_accrued_eth) }} ETH</td></tr>
-  </table>
-  {% endif %}
-
   {% if metrics.rpl %}
   <h3 class="block">RPL Rewards</h3>
   <table class="grid">

@@ -15,8 +15,12 @@ into a single structure the PDF and XLS generators both render:
       "period":      epochs + dates,
     }
 
-Billable streams (fee applied -> USD): RP-ETH (this module), and later CSM-ETH
-and RPL. stVault is report-only and lives under ``metrics`` (never billed).
+Billable streams (fee applied -> USD): RP-ETH (parquet) and RPL (manual amount).
+
+NOTE: Lido CSM and v3 stVault reporting are intentionally not wired here — that
+work is parked on the ``feature/pdf-invoicing-lido`` branch until it's ready to
+ship. The lido_* modules and the snapshot collector remain in the repo (the
+snapshot timer still runs) but the invoice does not consume them.
 
 A billable line mirrors the Zoho invoice columns:
     Qty   = fee portion of the earned amount (earned * fee_rate)
@@ -26,7 +30,6 @@ with the gross/net earned amount shown as the line's sub-detail.
 """
 
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,11 +47,6 @@ logger = logging.getLogger(__name__)
 # Mainnet genesis for epoch->date (matches generate_invoice.epoch_to_date).
 GENESIS_TS = 1606824000
 SECONDS_PER_EPOCH = 384
-
-
-def _default_rpc_url() -> str:
-    return (os.getenv('EXECUTION_RPC_URL') or os.getenv('RPC_URL')
-            or 'http://libc-prod2:8545')
 
 
 def epoch_to_datetime(epoch: int) -> datetime:
@@ -155,47 +153,28 @@ def _rp_eth_stream(client: Client, parquet_file: str, start_epoch: int,
     }
 
 
-def _csm_stream(client: Client, start_ts: int, end_ts: int,
-                rpc_url: str) -> Optional[Dict[str, Any]]:
-    """CSM ETH rewards for the client's operator id(s) over the period (or None)."""
-    if not client.csm_operator_ids:
-        return None
-    try:
-        from lido_csm import CSMRewardsClient
-        csm = CSMRewardsClient(rpc_url)
-        return csm.get_period_rewards(client.csm_operator_ids, start_ts, end_ts)
-    except Exception as e:
-        logger.warning(f"⚠️  CSM rewards unavailable ({e}); skipping CSM line")
-        return None
-
-
 def build_invoice(client_id: str, start_epoch: int, end_epoch: int,
                   parquet_file: str = 'rewards_data/rewards_master.parquet',
                   price_client: Optional[PriceClient] = None,
                   eth_price_override: Optional[float] = None,
                   invoice_number: Optional[str] = None,
-                  rpc_url: Optional[str] = None,
                   rpl_amount: Optional[float] = None,
-                  include_onchain: bool = True,
                   config_path: Optional[Path] = None) -> Dict[str, Any]:
     """
-    Assemble the full invoice model for ``client_id`` over [start_epoch, end_epoch].
+    Assemble the invoice model for ``client_id`` over [start_epoch, end_epoch].
 
-    Billable streams -> line items: RP-ETH (parquet), CSM-ETH (operator id),
-    and RPL (later). stVault is report-only (metrics). ``include_onchain=False``
-    skips chain reads (offline / tests).
+    Billable streams -> line items: RP-ETH (parquet) and RPL (manual amount).
+    (Lido CSM / stVault are parked on feature/pdf-invoicing-lido and not wired.)
     """
     company: Company = load_company(config_path) if config_path else load_company()
     client: Client = get_client(client_id, config_path) if config_path else get_client(client_id)
     price_client = price_client or PriceClient(
         overrides={'ETH': eth_price_override} if eth_price_override else None)
-    rpc_url = rpc_url or _default_rpc_url()
 
     eth_usd = price_client.eth_usd()
 
     start_date = epoch_to_datetime(start_epoch)
     end_date = epoch_to_datetime(end_epoch)
-    start_ts, end_ts = int(start_date.timestamp()), int(end_date.timestamp())
 
     metrics: Dict[str, Any] = {'prices': {'ETH_USD': eth_usd}}
     line_items: List[LineItem] = []
@@ -209,33 +188,6 @@ def build_invoice(client_id: str, start_epoch: int, end_epoch: int,
             earned=rp['net_eth'], token_symbol='ETH',
             fee_rate=client.fee_rate, usd_rate=eth_usd,
         ))
-
-    # --- Lido CSM ETH (billable) ---
-    if include_onchain:
-        csm = _csm_stream(client, start_ts, end_ts, rpc_url)
-        if csm is not None:
-            metrics['csm'] = {
-                'operator_ids': csm['operator_ids'],
-                'period_eth': csm['period_eth'],
-                'cumulative_eth': csm['cumulative_eth'],
-            }
-            if csm['period_eth'] > 0:
-                line_items.append(_billable_line(
-                    description='Lido CSM ETH Earnings',
-                    earned=csm['period_eth'], token_symbol='ETH',
-                    fee_rate=client.fee_rate, usd_rate=eth_usd,
-                ))
-
-    # --- Lido stVault (REPORT-ONLY: metrics, never billed) ---
-    if include_onchain and client.stvault and client.stvault.get('dashboard'):
-        try:
-            from lido_vault import StVaultClient
-            sv = StVaultClient(rpc_url, client.stvault['dashboard'])
-            # Period rewards + Lido fees come from VaultReportApplied logs (exact,
-            # historical, state-independent — see lido_vault).
-            metrics['stvault'] = sv.get_period_report(start_ts, end_ts)
-        except Exception as e:
-            logger.warning(f"⚠️  stVault report unavailable ({e})")
 
     # --- RPL rewards (billable; amount supplied manually) ---
     from rpl_rewards import resolve_period_rpl

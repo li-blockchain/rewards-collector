@@ -93,7 +93,7 @@ def test_billing_math(synthetic):
     inv = invoice_data.build_invoice(
         'test', 100, 100, parquet_file=pq,
         price_client=PriceClient(overrides={'ETH': 2000.0}),
-        include_onchain=False, config_path=cfg)
+        config_path=cfg)
 
     # Solo validator -> 100% of rewards: 1 ETH withdrawal + 0.5 ETH proposal = 1.5 ETH net.
     assert len(inv['line_items']) == 1
@@ -148,6 +148,6 @@ def test_no_onchain_means_no_csm_or_stvault(synthetic):
     inv = invoice_data.build_invoice(
         'test', 100, 100, parquet_file=pq,
         price_client=PriceClient(overrides={'ETH': 2000.0}),
-        include_onchain=False, config_path=cfg)
+        config_path=cfg)
     assert 'csm' not in inv['metrics']
     assert 'stvault' not in inv['metrics']
