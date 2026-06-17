@@ -182,10 +182,23 @@ class StVaultClient:
         topic1 = '0x' + self.vault.lower()[2:].rjust(64, '0')
         # Look back ~3 weeks so the report bounding the period start is included.
         from_block = self.block_at_timestamp(from_ts - 21 * 86400) or 0
-        to_block = self.block_at_timestamp(to_ts) if to_ts else 'latest'
-        logs = self.w3.eth.get_logs({
-            'address': self.hub.address, 'topics': [topic0, topic1],
-            'fromBlock': from_block, 'toBlock': to_block})
+        # A report is APPLIED on-chain hours-to-days after its reference
+        # timestamp, so fetch past the window end (and filter by each report's
+        # own timestamp downstream). Otherwise a just-applied report whose
+        # reference ts is inside the window is missed -> false 0.
+        to_block = (self.block_at_timestamp(to_ts + 5 * 86400) if to_ts else None) \
+            or self.w3.eth.block_number
+        # libc-prod2 cancels a single getLogs over a wide range (-32016), so scan
+        # in node-safe chunks and aggregate.
+        logs = []
+        chunk = 45000
+        b = from_block
+        while b <= to_block:
+            chunk_to = min(b + chunk - 1, to_block)
+            logs.extend(self.w3.eth.get_logs({
+                'address': self.hub.address, 'topics': [topic0, topic1],
+                'fromBlock': b, 'toBlock': chunk_to}))
+            b = chunk_to + 1
         reports = []
         for lg in logs:
             ts, tv, io, cfees, _liab, _maxliab, _slash = abi_decode(
