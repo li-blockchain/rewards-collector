@@ -20,6 +20,8 @@ import asyncio
 from unittest.mock import Mock, AsyncMock
 
 import pandas as pd
+import pytest
+import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -41,6 +43,8 @@ class FakeValidatorReader:
         return [{'index': k, **v} for k, v in self._meta.items()]
 
 
+FAR_FUTURE = 2**64 - 1
+
 META = {
     '100': {'type': '8', 'node': 'node3', 'minipool': '0xmp100'},
     '200': {'type': '32', 'node': 'node3', 'minipool': '0xmp200'},
@@ -60,12 +64,11 @@ class TestLocalNodeDataSource:
     def test_withdrawal_records_schema_and_gwei(self):
         lh = Mock()
         lh.get_epoch_blocks.return_value = []  # blocks unused (raw provided below)
-        lh.get_validator_statuses.return_value = {'100': 'active_ongoing', '200': 'withdrawal_done'}
+        lh.get_withdrawable_epochs.return_value = (20, {'100': FAR_FUTURE, '200': 9})
         lh.get_withdrawals.return_value = [
             {'validatorindex': 100, 'amount': 17692142, 'epoch': 10, 'timestamp': 1700000000},
             {'validatorindex': 200, 'amount': 32_000_000_000, 'epoch': 10, 'timestamp': 1700000000},
         ]
-        lh.is_validator_exited.side_effect = lambda s: s == 'withdrawal_done'
 
         src = build_source(lh, Mock(), Mock())
         records = src.collect_withdrawals(['100', '200'], 10)
@@ -129,7 +132,6 @@ class TestLocalNodeDataSource:
     def test_blocks_fetched_once_per_epoch(self):
         lh = Mock()
         lh.get_epoch_blocks.return_value = ['block']
-        lh.get_validator_statuses.return_value = {}
         lh.get_withdrawals.return_value = []
         lh.get_proposals.return_value = []
         src = build_source(lh, Mock(), Mock())
@@ -138,6 +140,67 @@ class TestLocalNodeDataSource:
         src.collect_proposals(['100'], 10)
         # Cached: only one network pass over the epoch's slots.
         lh.get_epoch_blocks.assert_called_once_with(10)
+
+    def test_exit_after_process_start_is_flagged(self):
+        """Regression, 2026-08-23: a validator active when the monitor started
+        and exited weeks later must still be flagged. The old head-status cache
+        lived for the whole process and stored these as rewards."""
+        lh = Mock()
+        lh.get_epoch_blocks.return_value = []
+        lh.get_withdrawable_epochs.side_effect = [
+            (10, {'200': FAR_FUTURE}),   # at start: active
+            (500, {'200': 480}),         # later: exited, withdrawable at 480
+        ]
+        src = build_source(lh, Mock(), Mock())
+
+        lh.get_withdrawals.return_value = [
+            {'validatorindex': 200, 'amount': 17_000_000, 'epoch': 10, 'timestamp': 1}]
+        assert src.collect_withdrawals(['200'], 10)[0]['is_exit'] is False
+
+        lh.get_withdrawals.return_value = [
+            {'validatorindex': 200, 'amount': 32_010_000_000, 'epoch': 490, 'timestamp': 2}]
+        assert src.collect_withdrawals(['200'], 490)[0]['is_exit'] is True
+
+    def test_snapshot_reused_for_epochs_it_covers(self):
+        """Backfill: one head snapshot answers every earlier epoch."""
+        lh = Mock()
+        lh.get_epoch_blocks.return_value = []
+        lh.get_withdrawable_epochs.return_value = (1000, {'200': 480})
+        src = build_source(lh, Mock(), Mock())
+
+        for epoch, expect_exit in [(100, False), (479, False), (480, True), (900, True)]:
+            lh.get_withdrawals.return_value = [
+                {'validatorindex': 200, 'amount': 1, 'epoch': epoch, 'timestamp': 1}]
+            assert src.collect_withdrawals(['200'], epoch)[0]['is_exit'] is expect_exit
+        lh.get_withdrawable_epochs.assert_called_once()
+
+    def test_skim_between_exit_and_withdrawable_is_not_exit(self):
+        lh = Mock()
+        lh.get_epoch_blocks.return_value = []
+        lh.get_withdrawable_epochs.return_value = (1000, {'200': 480})
+        lh.get_withdrawals.return_value = [
+            {'validatorindex': 200, 'amount': 17_000_000, 'epoch': 300, 'timestamp': 1}]
+        src = build_source(lh, Mock(), Mock())
+        assert src.collect_withdrawals(['200'], 300)[0]['is_exit'] is False
+
+    def test_no_withdrawals_skips_status_lookup(self):
+        lh = Mock()
+        lh.get_epoch_blocks.return_value = []
+        lh.get_withdrawals.return_value = []
+        src = build_source(lh, Mock(), Mock())
+        assert src.collect_withdrawals(['200'], 10) == []
+        lh.get_withdrawable_epochs.assert_not_called()
+
+    def test_status_lookup_failure_propagates(self):
+        """Fail the epoch rather than persist exits unflagged."""
+        lh = Mock()
+        lh.get_epoch_blocks.return_value = []
+        lh.get_withdrawals.return_value = [
+            {'validatorindex': 200, 'amount': 32_000_000_000, 'epoch': 10, 'timestamp': 1}]
+        lh.get_withdrawable_epochs.side_effect = requests.ConnectionError("down")
+        src = build_source(lh, Mock(), Mock())
+        with pytest.raises(requests.ConnectionError):
+            src.collect_withdrawals(['200'], 10)
 
 
 def _write_parquet(path, rows):

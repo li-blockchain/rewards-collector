@@ -25,7 +25,7 @@ import json
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, Iterator, List, Optional, Any
+from typing import Dict, Iterator, List, Optional, Tuple, Any
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -270,6 +270,49 @@ class LighthouseClient:
             statuses[str(validator['index'])] = validator['status']
         logger.info(f"📊 Fetched status for {len(statuses)} validators from beacon node")
         return statuses
+
+    def get_head_epoch(self) -> int:
+        """Epoch of the current head block. Raises on error."""
+        url = f"{self.base_url}/eth/v1/beacon/headers/head"
+        resp = self.session.get(url, timeout=self.timeout)
+        resp.raise_for_status()
+        return int(resp.json()['data']['header']['message']['slot']) // self.slots_per_epoch
+
+    def get_withdrawable_epochs(self, validator_indices: List[str]) -> Tuple[int, Dict[str, int]]:
+        """
+        Map validator index -> ``withdrawable_epoch``, plus the epoch the
+        snapshot is valid up to.
+
+        A withdrawal at epoch E is a full (exit) withdrawal iff the validator's
+        ``withdrawable_epoch <= E``. Once set, ``withdrawable_epoch`` never
+        changes, so a head snapshot answers correctly for every epoch up to the
+        head epoch it was taken at - but NOT for later epochs, where a validator
+        that was active at snapshot time may since have exited.
+
+        Raises on error: silently returning nothing would store exits as
+        rewards, which is the bug this replaces.
+        """
+        if not validator_indices:
+            return self.get_head_epoch(), {}
+
+        # Read the head epoch first: the validators query below sees a head at
+        # least this new, so the snapshot is valid for every epoch <= as_of.
+        as_of = self.get_head_epoch()
+        url = f"{self.base_url}/eth/v1/beacon/states/head/validators"
+        resp = self.session.post(
+            url,
+            json={'ids': [str(i) for i in validator_indices]},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+
+        epochs = {
+            str(v['index']): int(v['validator']['withdrawable_epoch'])
+            for v in resp.json().get('data', [])
+        }
+        logger.info(f"📊 Fetched withdrawable epochs for {len(epochs)} validators "
+                    f"(as of epoch {as_of})")
+        return as_of, epochs
 
     @staticmethod
     def is_validator_exited(status: str) -> bool:

@@ -190,6 +190,28 @@ class TestLighthouseValidatorStatuses:
         assert lh.get_validator_statuses(['100']) == {}
 
 
+class TestLighthouseWithdrawableEpochs:
+    def test_returns_head_epoch_and_withdrawable_epochs(self):
+        lh = LighthouseClient()
+        lh.session = Mock()
+        lh.session.get.return_value = make_response(200, {'data': {'header': {'message': {'slot': '15046592'}}}})
+        lh.session.post.return_value = make_response(200, {'data': [
+            {'index': '100', 'validator': {'withdrawable_epoch': '18446744073709551615'}},
+            {'index': '200', 'validator': {'withdrawable_epoch': '470730'}},
+        ]})
+        as_of, epochs = lh.get_withdrawable_epochs(['100', '200'])
+        assert as_of == 470206
+        assert epochs == {'100': 2**64 - 1, '200': 470730}
+
+    def test_error_raises(self):
+        lh = LighthouseClient()
+        lh.session = Mock()
+        lh.session.get.return_value = make_response(200, {'data': {'header': {'message': {'slot': '320'}}}})
+        lh.session.post.side_effect = requests.ConnectionError("down")
+        with pytest.raises(requests.ConnectionError):
+            lh.get_withdrawable_epochs(['100'])
+
+
 class TestExecutionClientProducerReward:
     def _client_with(self, base_fee, receipts):
         ec = ExecutionClient()

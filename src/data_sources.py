@@ -57,17 +57,20 @@ class LocalNodeDataSource:
         # epoch only trigger one pass over the 32 slots.
         self._cache_epoch: Optional[int] = None
         self._cache_blocks: Optional[List[Dict[str, Any]]] = None
-        # Validator status is a HEAD query - identical for every epoch in a run,
-        # so cache it per validator-set instead of re-fetching 14k times.
-        self._status_cache: Dict[tuple, Dict[str, str]] = {}
+        # withdrawable_epoch snapshot per validator-set: (as_of_epoch, {index: epoch}).
+        # Valid for any epoch <= as_of, so a backfill fetches it once, while the
+        # long-running monitor refreshes it as finalization moves past as_of.
+        # (A snapshot kept for the life of the process is what stored the
+        # 2026-08-23 exits as rewards.)
+        self._withdrawable_cache: Dict[tuple, Tuple[int, Dict[str, int]]] = {}
 
-    def _get_statuses(self, validator_indices: List[str]) -> Dict[str, str]:
+    def _get_withdrawable_epochs(self, validator_indices: List[str], epoch: int) -> Dict[str, int]:
         key = tuple(validator_indices)
-        statuses = self._status_cache.get(key)
-        if statuses is None:
-            statuses = self.lighthouse.get_validator_statuses(validator_indices)
-            self._status_cache[key] = statuses
-        return statuses
+        cached = self._withdrawable_cache.get(key)
+        if cached is None or cached[0] < epoch:
+            cached = self.lighthouse.get_withdrawable_epochs(validator_indices)
+            self._withdrawable_cache[key] = cached
+        return cached[1]
 
     def _get_blocks(self, epoch: int) -> List[Dict[str, Any]]:
         if self._cache_epoch != epoch or self._cache_blocks is None:
@@ -77,15 +80,17 @@ class LocalNodeDataSource:
 
     def collect_withdrawals(self, validator_indices: List[str], epoch: int) -> List[Dict[str, Any]]:
         blocks = self._get_blocks(epoch)
-        statuses = self._get_statuses(validator_indices)
         raw = self.lighthouse.get_withdrawals(validator_indices, epoch, blocks=blocks)
+        withdrawable = self._get_withdrawable_epochs(validator_indices, epoch) if raw else {}
 
         records = []
         exit_count = 0
         for w in raw:
             index = str(w['validatorindex'])
             info = self.validator_reader.get_validator_by_index(index)
-            is_exit = self.lighthouse.is_validator_exited(statuses.get(index, ''))
+            # Full withdrawal iff the validator was withdrawable at this epoch.
+            # A skim before that point - even after the exit epoch - is a reward.
+            is_exit = index in withdrawable and withdrawable[index] <= w['epoch']
             if is_exit:
                 exit_count += 1
             records.append(_base_record(
