@@ -105,7 +105,7 @@ def _rp_eth_stream(client: Client, parquet_file: str, start_epoch: int,
 
     if df.empty:
         return {'net_eth': 0.0, 'earnings': None, 'metrics': {
-            'rp_net_eth': 0.0, 'rp_gross_eth': 0.0, 'blocks_proposed': 0,
+            'rp_net_eth': 0.0, 'rp_gross_eth': 0.0, 'rp_exits_eth': 0.0, 'blocks_proposed': 0,
             'mev_blocks': 0, 'local_blocks': 0, 'mev_value_eth': 0.0,
             'withdrawal_count': 0, 'validators': 0, 'node_breakdown': [],
             'type_counts': {}}}
@@ -117,7 +117,10 @@ def _rp_eth_stream(client: Client, parquet_file: str, start_epoch: int,
     mev_blocks = proposals[proposals['mev_source'].fillna('') != '']
     local_blocks = proposals[proposals['mev_source'].fillna('') == '']
     withdrawals = df[df['record_type'] == 'withdrawal']
-    gross_eth = (proposals['amount'].sum() / 1e18) + (withdrawals['amount'].sum() / 1e9)
+    # Pre-commission rewards: every withdrawal and proposal, minus the exit
+    # principal calculate_earnings carved out (returned capital, not rewards).
+    gross_eth = ((proposals['amount'].sum() / 1e18) + (withdrawals['amount'].sum() / 1e9)
+                 - earnings['exit_principal_eth'])
 
     # Validator type mix (LEB8 / LEB16 / 32 ETH) among the client's validators.
     vtypes = df.groupby('validator_index')['validator_type'].first()

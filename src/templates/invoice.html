@@ -176,6 +176,7 @@
     <tr><td>Net rewards (after RP commission)</td><td class="r">{{ '%.6f'|format(metrics.rp_net_eth) }} ETH</td></tr>
     <tr><td>— Withdrawals (consensus skim)</td><td class="r">{{ '%.6f'|format(metrics.rp_withdrawals_eth) }} ETH</td></tr>
     <tr><td>— Block proposals (EL + MEV)</td><td class="r">{{ '%.6f'|format(metrics.rp_proposals_eth) }} ETH</td></tr>
+    {% if metrics.rp_exits_eth %}<tr><td>Principal returned from exits (not billed)</td><td class="r">{{ '%.6f'|format(metrics.rp_exits_eth) }} ETH</td></tr>{% endif %}
     <tr><td>Blocks proposed (MEV-relay / local)</td><td class="r">{{ metrics.blocks_proposed }} ({{ metrics.mev_blocks }} / {{ metrics.local_blocks }})</td></tr>
     <tr><td>MEV value captured</td><td class="r">{{ '%.6f'|format(metrics.mev_value_eth) }} ETH</td></tr>
     <tr><td>Withdrawal records</td><td class="r">{{ metrics.withdrawal_count }}</td></tr>

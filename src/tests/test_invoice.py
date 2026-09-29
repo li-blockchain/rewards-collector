@@ -175,6 +175,30 @@ def test_billing_math(synthetic):
     assert inv['metrics']['mev_blocks'] == 1
 
 
+def test_gross_rewards_exclude_exit_principal(synthetic):
+    """Regression, INV-20260929-464963: page 2 'Gross rewards' summed exit
+    principal in (2,078 ETH gross against 32 ETH net)."""
+    pq, cfg = synthetic
+    df = pd.read_parquet(pq)
+    exit_row = df.iloc[0].copy()
+    exit_row['validator_index'] = 2
+    exit_row['amount'] = 32_435_000_000                  # 32 ETH principal + 0.435 excess
+    exit_row['is_exit'] = True
+    pd.concat([df, exit_row.to_frame().T], ignore_index=True).to_parquet(pq, index=False)
+
+    inv = invoice_data.build_invoice(
+        'test', 100, 100, parquet_file=pq,
+        price_client=PriceClient(overrides={'ETH': 2000.0}),
+        config_path=cfg)
+
+    m = inv['metrics']
+    assert m['rp_exits_eth'] == pytest.approx(32.0)
+    # 1 ETH skim + 0.435 exit excess + 0.5 ETH proposal; principal excluded.
+    assert m['rp_gross_eth'] == pytest.approx(1.935)
+    assert m['rp_net_eth'] == pytest.approx(1.935)       # solo: gross == net
+    assert inv['line_items'][0]['earned'] == pytest.approx(1.935)
+
+
 def test_vault_report_event_decode():
     """A synthetic VaultReportApplied data payload decodes to the right fields."""
     from eth_abi import encode, decode

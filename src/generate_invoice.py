@@ -122,6 +122,10 @@ class InvoiceGenerator:
 
         proposals_df = df_calc[df_calc['record_type'] == 'proposal'].copy()
 
+        # Raw principal carved out of exits (capped at 32 ETH each), before any
+        # bond split - lets callers derive a gross-rewards figure without it.
+        exit_principal_eth = exits_df['amount'].sum() / 10**9 if not exits_df.empty else 0.0
+
         # Apply reward adjustments for regular withdrawals and proposals
         if not withdrawals_df.empty:
             withdrawals_df['amount_adjusted'] = withdrawals_df.apply(
@@ -174,6 +178,7 @@ class InvoiceGenerator:
             'total_withdrawals': total_withdrawals,
             'total_proposals': total_proposals,
             'total_exits': total_exits,
+            'exit_principal_eth': exit_principal_eth,
             'exit_count': exit_count,
             'grand_total': grand_total,
             'total_validators': total_validators,
