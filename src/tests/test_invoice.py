@@ -30,6 +30,73 @@ def test_price_override_wins():
     assert pc.eth_usd() == 2350.0  # no network call
 
 
+class _Resp:
+    def __init__(self, status, body=None):
+        self.status_code, self._body = status, body
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+            raise requests.HTTPError(f"{self.status_code} Client Error")
+
+    def json(self):
+        return self._body
+
+
+def test_price_falls_back_to_coinbase_on_coingecko_403(monkeypatch):
+    monkeypatch.delenv('COINGECKO_API_KEY', raising=False)
+    pc = PriceClient()
+    calls = []
+
+    def get(url, **kw):
+        calls.append(url)
+        if 'coingecko' in url:
+            return _Resp(403)
+        return _Resp(200, {'data': {'amount': '2735.765', 'base': 'ETH', 'currency': 'USD'}})
+
+    pc.session.get = get
+    assert pc.eth_usd() == 2735.765
+    assert pc.eth_usd() == 2735.765          # cached
+    assert len(calls) == 2
+    assert calls[1] == 'https://api.coinbase.com/v2/prices/ETH-USD/spot'
+
+
+def test_price_sends_coingecko_demo_key():
+    pc = PriceClient(coingecko_api_key='CG-test')
+    seen = {}
+
+    def get(url, headers=None, **kw):
+        seen['headers'] = headers
+        return _Resp(200, {'rocket-pool': {'usd': 2.03}})
+
+    pc.session.get = get
+    assert pc.rpl_usd() == 2.03
+    assert seen['headers'] == {'x-cg-demo-api-key': 'CG-test'}
+
+
+def test_price_unavailable_when_all_sources_fail(monkeypatch):
+    from pricing import PriceUnavailable
+    monkeypatch.delenv('COINGECKO_API_KEY', raising=False)
+    pc = PriceClient()
+    pc.session.get = lambda url, **kw: _Resp(403)
+    with pytest.raises(PriceUnavailable, match='CoinGecko.*Coinbase'):
+        pc.eth_usd()
+
+
+def test_steth_falls_back_to_eth_without_coinbase_pair(monkeypatch):
+    monkeypatch.delenv('COINGECKO_API_KEY', raising=False)
+    pc = PriceClient()
+
+    def get(url, **kw):
+        if 'coingecko' in url:
+            return _Resp(403)
+        assert 'ETH-USD' in url                 # never asks Coinbase for stETH
+        return _Resp(200, {'data': {'amount': '2700.0'}})
+
+    pc.session.get = get
+    assert pc.steth_usd() == 2700.0
+
+
 def test_rpl_precedence():
     assert resolve_period_rpl(1378.0, 50.0) == 1378.0   # explicit wins
     assert resolve_period_rpl(None, 50.0) == 50.0       # client default
